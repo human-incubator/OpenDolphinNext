@@ -36,6 +36,16 @@ public class VisitPatientListResponse extends OrcaApiResponse {
         private String updateDate;
         private String updateTime;
         private PatientSummary patient;
+        /** Local encounter_projection business_state (e.g. checked_in, chart_opened); null when not projected. */
+        private String businessState;
+
+        public String getBusinessState() {
+            return businessState;
+        }
+
+        public void setBusinessState(String businessState) {
+            this.businessState = businessState;
+        }
 
         public String getScheduleKey() {
             return scheduleKey;

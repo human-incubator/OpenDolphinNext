@@ -185,4 +185,22 @@ describe('outpatient transformers', () => {
       }),
     );
   });
+
+  it('prefers local encounter businessState (chart_opened) over ORCA-derived 受付中', () => {
+    const entries = parseAppointmentEntries({
+      visitDate: '2026-05-03',
+      visits: [
+        {
+          receptionId: '00003',
+          encounterKey: 'F001:00003',
+          updateTime: '051501',
+          businessState: 'chart_opened',
+          patient: { patientId: '000002', wholeName: 'Seed Patient2' },
+        },
+      ],
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toEqual(expect.objectContaining({ status: '診療中', source: 'visits' }));
+  });
 });

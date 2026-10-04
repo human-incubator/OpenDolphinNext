@@ -175,6 +175,44 @@ class OrcaVisitResourceTest {
     }
 
     @Test
+    void visitListExposesLocalBusinessStateOnOrcaVisits() {
+        OrcaLiveGateway wrapperService = mock(OrcaLiveGateway.class);
+        VisitPatientListResponse stub = new VisitPatientListResponse();
+        stub.setApiResult("00");
+        stub.setApiResultMessage("OK");
+        stub.setVisitDate("2026-04-13");
+        VisitPatientListResponse.VisitEntry orcaVisit = new VisitPatientListResponse.VisitEntry();
+        orcaVisit.setEncounterKey("F001:V-300");
+        orcaVisit.setVoucherNumber("V-300");
+        PatientSummary orcaPatient = new PatientSummary();
+        orcaPatient.setPatientId("000300");
+        orcaVisit.setPatient(orcaPatient);
+        stub.getVisits().add(orcaVisit);
+        when(wrapperService.getVisitList(anyString(), any(VisitPatientListRequest.class))).thenReturn(stub);
+
+        EncounterProjectionRepository encounterProjectionRepository = mock(EncounterProjectionRepository.class);
+        when(encounterProjectionRepository.findByFacilityAndAcceptanceRange(anyString(), any(Instant.class), any(Instant.class)))
+                .thenReturn(List.of(new EncounterProjectionRepository.EncounterRow(
+                        "F001:V-300", "F001", "000300", 30L, null, "V-300",
+                        Instant.parse("2026-04-13T00:00:00Z"), "chart_opened",
+                        Instant.parse("2026-04-13T00:10:00Z"), null, null, "doctor01", null, null, null,
+                        2L, Instant.parse("2026-04-13T00:10:00Z"))));
+
+        OrcaVisitResource resource = new OrcaVisitResource();
+        resource.setWrapperService(wrapperService);
+        resource.encounterProjectionRepository = encounterProjectionRepository;
+
+        VisitPatientListRequest request = new VisitPatientListRequest();
+        request.setRequestNumber("02");
+        request.setVisitDate(LocalDate.of(2026, 4, 13));
+
+        VisitPatientListResponse response = resource.visitList(createRequest("F001:doctor01", Map.of()), request);
+
+        assertEquals(1, response.getVisits().size());
+        assertEquals("chart_opened", response.getVisits().get(0).getBusinessState());
+    }
+
+    @Test
     void visitListProjectedFallbackUsesPersistedServerDerivedOfficialIdentifiers() {
         OrcaLiveGateway wrapperService = mock(OrcaLiveGateway.class);
         VisitPatientListResponse stub = new VisitPatientListResponse();

@@ -20,6 +20,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -1375,6 +1376,7 @@ public class OrcaVisitResource extends AbstractOrcaWrapperResource {
         if (projectedRows.isEmpty()) {
             return;
         }
+        applyProjectedBusinessStates(response, projectedRows);
 
         HashSet<String> seenEncounterKeys = new HashSet<>();
         HashSet<String> seenAcceptanceIds = new HashSet<>();
@@ -1416,6 +1418,7 @@ public class OrcaVisitResource extends AbstractOrcaWrapperResource {
             visit.setUpdateDate(fromDate.toString());
             visit.setUpdateTime(ORCA_TIME_FORMAT.format(row.acceptanceDatetime()));
             visit.setPatient(resolveProjectedPatientSummary(facilityId, row.patientId()));
+            visit.setBusinessState(normalize(row.businessState()));
             response.getVisits().add(visit);
             collectKey(seenEncounterKeys, row.encounterKey());
             collectKey(seenAcceptanceIds, row.orcaAcceptanceId());
@@ -1425,6 +1428,42 @@ public class OrcaVisitResource extends AbstractOrcaWrapperResource {
         if (merged) {
             response.setRecordsReturned(response.getVisits().size());
             response.setFallbackUsed(true);
+        }
+    }
+
+    /**
+     * ORCA acceptlstv2 has no notion of local workflow states such as 診察開始 (chart_opened), so the
+     * reception list / chart header would keep showing 受付中. Expose the local encounter_projection
+     * business_state on each matching visit so clients can prefer it over ORCA-derived status.
+     */
+    private void applyProjectedBusinessStates(VisitPatientListResponse response,
+            List<EncounterProjectionRepository.EncounterRow> projectedRows) {
+        Map<String, String> stateByEncounterKey = new HashMap<>();
+        Map<String, String> stateByAcceptanceId = new HashMap<>();
+        for (EncounterProjectionRepository.EncounterRow row : projectedRows) {
+            String state = normalize(row.businessState());
+            if (state == null) {
+                continue;
+            }
+            if (normalize(row.encounterKey()) != null) {
+                stateByEncounterKey.put(normalize(row.encounterKey()), state);
+            }
+            if (normalize(row.orcaAcceptanceId()) != null) {
+                stateByAcceptanceId.put(normalize(row.orcaAcceptanceId()), state);
+            }
+        }
+        for (VisitPatientListResponse.VisitEntry visit : response.getVisits()) {
+            if (visit == null) {
+                continue;
+            }
+            String encounterKey = normalize(visit.getEncounterKey());
+            String state = encounterKey != null ? stateByEncounterKey.get(encounterKey) : null;
+            if (state == null && normalize(visit.getVoucherNumber()) != null) {
+                state = stateByAcceptanceId.get(normalize(visit.getVoucherNumber()));
+            }
+            if (state != null) {
+                visit.setBusinessState(state);
+            }
         }
     }
 

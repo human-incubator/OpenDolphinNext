@@ -15,13 +15,32 @@ export const normalizeBoolean = (value: unknown): boolean | undefined => {
   return undefined;
 };
 
+// サーバー側 encounter_projection.business_state（院内の診察開始・会計状態）。ORCA の受付情報には
+// 診察開始が反映されないため、存在する場合は ORCA 由来の推定より優先する。
+const statusFromBusinessState = (businessState: unknown): ReceptionStatus | undefined => {
+  if (typeof businessState !== 'string') return undefined;
+  switch (businessState.trim().toLowerCase()) {
+    case 'chart_opened':
+      return '診療中';
+    case 'billed':
+    case 'accounting-wait':
+    case 'billing-waiting':
+      return '会計待ち';
+    default:
+      return undefined;
+  }
+};
+
 const deriveStatus = (payload: {
   visitInformation?: string;
   updateTime?: string;
   appointmentDate?: string;
   appointmentTime?: string;
   scheduledFallback?: boolean;
+  businessState?: unknown;
 }): ReceptionStatus => {
+  const projected = statusFromBusinessState(payload.businessState);
+  if (projected) return projected;
   const info = payload.visitInformation ?? '';
   if (info.includes('会計済')) return '会計済み';
   if (info.includes('会計') || info.includes('精算')) return '会計待ち';
@@ -432,6 +451,7 @@ export const parseAppointmentEntries = (json: any): ReceptionEntry[] => {
         appointmentDate: json?.visitDate,
         appointmentTime: visit.updateTime,
         scheduledFallback: false,
+        businessState: visit.businessState ?? visit.business_state,
       }),
       insurance: pickInsuranceDisplayName(visit),
       source: 'visits',
