@@ -69,6 +69,21 @@ class OrcaChartSupportResourceTest {
     }
 
     @Test
+    void medicationGetNormalizesCompactBaseDateToIsoForOrca() {
+        CapturingTransport transport = new CapturingTransport();
+        OrcaChartSupportResource resource = new OrcaChartSupportResource();
+        injectField(resource, "orcaTransport", transport);
+
+        ChartSupportMedicationGetRequest payload = new ChartSupportMedicationGetRequest();
+        payload.setRequestCode("114030710");
+        payload.setBaseDate("20260322");
+
+        resource.medicationGet(buildRequest(), payload);
+
+        assertTrue(transport.requestXml().contains("<Base_Date type=\"string\">2026-03-22</Base_Date>"));
+    }
+
+    @Test
     void medicationGetRejectsNonNineDigitRequestCodeForSelectionLookup() {
         OrcaChartSupportResource resource = new OrcaChartSupportResource();
         injectField(resource, "orcaTransport", new CapturingTransport());

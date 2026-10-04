@@ -15,6 +15,7 @@ import jakarta.ws.rs.core.Response;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -332,8 +333,14 @@ public class OrcaChartSupportResource extends AbstractOrcaRestResource {
         if (!payload.getBaseDate().trim().matches("\\d{8}|\\d{4}-\\d{2}-\\d{2}")) {
             throw validationError(request, "payload.baseDate", "baseDate must be yyyy-MM-dd or yyyymmdd");
         }
-        if (!isBlank(payload.getBaseDate())) {
-            payload.setBaseDate(payload.getBaseDate().trim());
+        // ORCA medicationgetv2 Base_Date requires yyyy-MM-dd; yyyymmdd yields Api_Result=E02.
+        String baseDate = payload.getBaseDate().trim();
+        try {
+            payload.setBaseDate(baseDate.length() == 8
+                    ? LocalDate.parse(baseDate, DateTimeFormatter.BASIC_ISO_DATE).toString()
+                    : LocalDate.parse(baseDate).toString());
+        } catch (DateTimeParseException ex) {
+            throw validationError(request, "payload.baseDate", "baseDate must be a valid calendar date");
         }
         payload.setRequestCode(payload.getRequestCode().trim());
         payload.setRequestNumber(requestNumber);
