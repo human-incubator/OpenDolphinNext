@@ -115,11 +115,11 @@
 
         // MSW の有効/無効を RUM へ伝搬させる
         window.__MSW_ENABLED__ = params.get('msw') !== '0';
-        window.__PERF_ENDPOINT__ = `${window.location.origin}/__perf-log`;
+        window.__PERF_ENDPOINT__ = `${window.location.origin}%BASE_URL%__perf-log`;
 
         const script = document.createElement('script');
         script.type = 'module';
-        script.src = '/web-vitals-rum.js';
+        script.src = '%BASE_URL%web-vitals-rum.js';
         document.head.appendChild(script);
       })();
     </script>

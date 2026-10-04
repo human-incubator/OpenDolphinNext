@@ -1,4 +1,4 @@
-import { onCLS, onINP, onLCP, onFCP, onTTFB } from '/vendor/web-vitals.js';
+import { onCLS, onINP, onLCP, onFCP, onTTFB } from './vendor/web-vitals.js';
 
 const runId = window.__PERF_RUN_ID__ || '20251124T200000Z';
 const source = 'charts/orca-master';
