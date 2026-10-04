@@ -55,6 +55,8 @@ const postChartEditSession = async (
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
+    // release は画面遷移・タブクローズ・pagehide の最中に送られるため、ページ破棄で中断されないよう keepalive を付ける。
+    keepalive: operation === 'release',
   });
   const status = response.status;
   const raw = await response.text().catch(() => '');

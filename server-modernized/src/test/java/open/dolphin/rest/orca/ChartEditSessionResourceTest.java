@@ -77,6 +77,10 @@ class ChartEditSessionResourceTest extends RuntimeDelegateTestSupport {
 
         assertEquals(409, ex.getResponse().getStatus());
         assertTrue(String.valueOf(ex.getResponse().getEntity()).contains("chart_edit_session_locked"));
+        Map<?, ?> body = (Map<?, ?>) ex.getResponse().getEntity();
+        assertEquals("other-editor", body.get("lockStatus"));
+        assertEquals("RUN-OTHER", body.get("ownerRunId"));
+        assertEquals("2026-05-17T00:05:00Z", body.get("expiresAt"));
     }
 
     private static ChartEditSessionRequest payload() {

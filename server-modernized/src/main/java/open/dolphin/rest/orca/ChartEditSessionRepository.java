@@ -46,10 +46,14 @@ class ChartEditSessionRepository {
         }
 
         boolean active = current.releasedAt() == null && current.expiresAt().isAfter(now);
-        boolean sameOwner = command.actorUserId().equals(current.ownerUserId())
+        boolean sameUser = command.actorUserId().equals(current.ownerUserId());
+        boolean sameOwner = sameUser
                 && trimToNull(command.ownerTabSessionId()) != null
                 && trimToNull(command.ownerTabSessionId()).equals(current.ownerTabSessionId());
-        if (active && !sameOwner && !command.forceTakeover()) {
+        // The same user re-opening the chart (new browser tab, reload, or a lease left behind because the
+        // release request was lost on tab close) takes the lease over without the forced-takeover flow.
+        // Only a different user is reported as another editor.
+        if (active && !sameUser && !command.forceTakeover()) {
             return new EditSessionResult(false, "other-editor", command.patientId(), command.encounterScope(),
                     current.leaseId(), current.ownerRunId(), current.ownerTabSessionId(), current.acquiredAt(),
                     current.heartbeatAt(), current.expiresAt(), false, "chart_edit_session_locked");

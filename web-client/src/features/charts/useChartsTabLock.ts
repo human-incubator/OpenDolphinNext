@@ -84,6 +84,7 @@ export function useChartsTabLock(options: {
   legacyKeyRef.current = legacyStorageKey;
   const serverLeaseIdRef = useRef<string | null>(null);
   const serverLeaseForceTakeoverRef = useRef(false);
+  const unmountedRef = useRef(false);
 
   const serverLeaseParams = useMemo<ChartEditSessionParams | null>(() => {
     const patientId = (options.target.patientId ?? '').trim();
@@ -296,7 +297,9 @@ export function useChartsTabLock(options: {
   }, [apply, enabled, releaseServerLease, storageKey, tabSessionId]);
 
   useEffect(() => {
+    unmountedRef.current = false;
     return () => {
+      unmountedRef.current = true;
       const activeKey = storageKeyRef.current;
       releaseServerLease();
       if (!activeKey) return;
@@ -315,6 +318,13 @@ export function useChartsTabLock(options: {
       forceTakeover,
     })
       .then((result) => {
+        if (unmountedRef.current) {
+          // acquire 応答前にカルテを閉じた場合、取得できたリースをその場で返却して残留させない。
+          if (result.ok && result.leaseId) {
+            void releaseChartEditSession({ ...serverLeaseParams, leaseId: result.leaseId }).catch(() => undefined);
+          }
+          return;
+        }
         if (canceled) return;
         if (result.ok && result.leaseId) {
           serverLeaseIdRef.current = result.leaseId;
@@ -384,6 +394,8 @@ export function useChartsTabLock(options: {
       releaseChartsTabLock({ storageKey: activeKey, ownerTabSessionId: tabSessionId });
     };
     window.addEventListener('beforeunload', onBeforeUnload);
+    // モバイル Safari / bfcache では beforeunload が発火しないため pagehide でも解放する。
+    window.addEventListener('pagehide', onBeforeUnload);
 
     const onVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
@@ -396,6 +408,7 @@ export function useChartsTabLock(options: {
     return () => {
       window.clearInterval(interval);
       window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('pagehide', onBeforeUnload);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       disposeSubscription();
     };

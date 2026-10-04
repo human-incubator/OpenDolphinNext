@@ -7,6 +7,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -92,12 +93,40 @@ public class ChartEditSessionResource extends AbstractOrcaRestResource {
             details.put("ownerRunId", result.ownerRunId());
             details.put("ownerTabSessionId", result.ownerTabSessionId());
             details.put("expiresAt", iso(result.expiresAt()));
-            throw restError(request, Response.Status.CONFLICT, result.errorCode(),
+            WebApplicationException conflict = restError(request, Response.Status.CONFLICT, result.errorCode(),
                     "Chart edit session is held by another active editor.", details, null);
+            exposeLockHolder(conflict, result);
+            throw conflict;
         }
         markSuccessDetails(audit);
         recordAudit(request, AUDIT_ACTION, audit, AuditEventEnvelope.Outcome.SUCCESS);
         return response(runId, result);
+    }
+
+    /**
+     * The shared error-body builder drops non-whitelisted details, so the lock holder (runId / expiry)
+     * the client shows in the takeover dialog is added to the 409 body here at top level.
+     */
+    @SuppressWarnings("unchecked")
+    private static void exposeLockHolder(WebApplicationException conflict,
+            ChartEditSessionRepository.EditSessionResult result) {
+        Object entity = conflict.getResponse() != null ? conflict.getResponse().getEntity() : null;
+        if (!(entity instanceof Map<?, ?>)) {
+            return;
+        }
+        Map<String, Object> body = (Map<String, Object>) entity;
+        putIfPresent(body, "lockStatus", result.lockStatus());
+        putIfPresent(body, "ownerRunId", result.ownerRunId());
+        putIfPresent(body, "ownerTabSessionId", result.ownerTabSessionId());
+        putIfPresent(body, "acquiredAt", iso(result.acquiredAt()));
+        putIfPresent(body, "heartbeatAt", iso(result.heartbeatAt()));
+        putIfPresent(body, "expiresAt", iso(result.expiresAt()));
+    }
+
+    private static void putIfPresent(Map<String, Object> body, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            body.put(key, value);
+        }
     }
 
     private String requirePatientId(HttpServletRequest request, ChartEditSessionRequest payload, String facilityId,
