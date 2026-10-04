@@ -1627,6 +1627,9 @@ EOF
 
 start_web_client() {
   case "$WEB_CLIENT_MODE_LOWER" in
+    none | off | skip)
+      log "Web client start skipped (WEB_CLIENT_MODE=${WEB_CLIENT_MODE}); served as a production build by nginx."
+      ;;
     npm* | dev*)
       start_web_client_npm
       ;;
