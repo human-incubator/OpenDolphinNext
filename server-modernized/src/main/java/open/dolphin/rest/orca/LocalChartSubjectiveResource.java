@@ -3,9 +3,11 @@ package open.dolphin.rest.orca;
 import jakarta.inject.Inject;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
@@ -14,8 +16,12 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -23,6 +29,7 @@ import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import open.dolphin.audit.AuditEventEnvelope;
+import open.dolphin.infomodel.DocInfoModel;
 import open.dolphin.infomodel.DocumentModel;
 import open.dolphin.infomodel.IInfoModel;
 import open.dolphin.infomodel.KarteBean;
@@ -48,6 +55,15 @@ public class LocalChartSubjectiveResource extends AbstractOrcaRestResource {
     private static final int MAX_BODY_LENGTH = 1000;
     private static final String ROUTE_NAMESPACE = "local";
     private static final String AUDIT_ACTION = "LOCAL_CHART_SUBJECTIVES_MUTATION";
+    private static final String AUDIT_READ_ACTION = "LOCAL_CHART_SUBJECTIVES_READ";
+    /** Legacy title used for every section before per-section titles were introduced. */
+    private static final String TITLE_FREE = "主訴";
+    private static final Map<String, String> TITLE_BY_SECTION = Map.of(
+            "free", TITLE_FREE,
+            "subjective", "S 主観",
+            "objective", "O 客観",
+            "assessment", "A 評価",
+            "plan", "P 計画");
     private static final String REASON_DOCUMENT_INTEGRITY_UNAVAILABLE = "document_integrity_unavailable";
     private static final String REASON_CONFIGURATION_REQUIRED = "configuration_required";
     private static final String REASON_RETRYABLE_SERVER_ERROR = "retryable_server_error";
@@ -81,7 +97,8 @@ public class LocalChartSubjectiveResource extends AbstractOrcaRestResource {
         Date performDate = requirePerformDate(request, payload.getPerformDate(), new Date(), facilityId, patientId, runId);
         KarteBean karte = requireKarte(request, facilityId, patientId, runId, patient);
 
-        DocumentModel document = buildSubjectiveDocument(karte, user, payload, performDate, body, soapCategory);
+        DocumentModel document = buildSubjectiveDocument(karte, user, payload, performDate, body, soapCategory,
+                displaySection);
         long documentId = persistSubjectiveDocument(request, document, facilityId, patientId, runId, soapCategory,
                 displaySection);
         String recordedAt = Instant.now().toString();
@@ -106,6 +123,148 @@ public class LocalChartSubjectiveResource extends AbstractOrcaRestResource {
         markSuccessDetails(audit);
         recordAudit(request, AUDIT_ACTION, audit, AuditEventEnvelope.Outcome.SUCCESS);
         return response;
+    }
+
+    /**
+     * Reads back SOAP/F entries saved through {@link #postSubjective} for one perform date so the chart can
+     * restore the SOAP panel and its history when it is reopened.
+     */
+    @GET
+    @Path("/subjectives")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Map<String, Object> getSubjectives(@Context HttpServletRequest request,
+            @QueryParam("patientId") String patientIdParam,
+            @QueryParam("performDate") String performDateParam) {
+        String runId = resolveRunId(request);
+        requireRemoteUser(request);
+        String facilityId = requireFacilityId(request);
+        if (patientIdParam == null || patientIdParam.isBlank()) {
+            failSubjectiveReadRequest(request, buildSubjectiveAudit(facilityId, null, runId), "patientId",
+                    "patientId is required");
+        }
+        String patientId = patientIdParam.trim();
+        LocalDate performDate;
+        try {
+            performDate = performDateParam == null || performDateParam.isBlank()
+                    ? LocalDate.now(ZoneId.systemDefault())
+                    : LocalDate.parse(performDateParam.trim());
+        } catch (DateTimeParseException ex) {
+            failSubjectiveReadRequest(request, buildSubjectiveAudit(facilityId, patientId, runId), "performDate",
+                    "performDate must be yyyy-MM-dd");
+            return Map.of();
+        }
+        PatientModel patient = patientServiceBean.getPatientById(facilityId, patientId);
+        if (patient == null) {
+            Map<String, Object> audit = buildSubjectiveAudit(facilityId, patientId, runId);
+            markFailureDetails(audit, Response.Status.NOT_FOUND.getStatusCode(), "patient_not_found", "Patient not found");
+            recordAudit(request, AUDIT_READ_ACTION, audit, AuditEventEnvelope.Outcome.FAILURE);
+            throw restError(request, Response.Status.NOT_FOUND, "patient_not_found", "Patient not found");
+        }
+        Date dayStart = Date.from(performDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
+        Date dayEnd = Date.from(performDate.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant());
+        KarteBean karte = karteServiceBean.getKarte(facilityId, patientId, dayStart);
+        List<SubjectiveEntryResponse.Entry> entries = new ArrayList<>();
+        if (karte != null) {
+            List<Long> ids = new ArrayList<>();
+            for (DocInfoModel info : karteServiceBean.getDocumentList(karte.getId(), dayStart, false)) {
+                Date started = info.getFirstConfirmDate();
+                if (info.getDocPk() > 0
+                        && IInfoModel.DOCTYPE_KARTE.equals(info.getDocType())
+                        && TITLE_BY_SECTION.containsValue(info.getTitle())
+                        && (started == null || started.before(dayEnd))) {
+                    ids.add(info.getDocPk());
+                }
+            }
+            if (!ids.isEmpty()) {
+                List<DocumentModel> documents = new ArrayList<>(karteServiceBean.getDocumentsWithModules(ids));
+                documents.sort(Comparator.comparing(DocumentModel::getRecorded,
+                        Comparator.nullsFirst(Comparator.naturalOrder())).thenComparingLong(DocumentModel::getId));
+                for (DocumentModel document : documents) {
+                    SubjectiveEntryResponse.Entry entry = toStoredEntry(document, patientId);
+                    if (entry != null) {
+                        entries.add(entry);
+                    }
+                }
+            }
+        }
+
+        Map<String, Object> audit = buildSubjectiveAudit(facilityId, patientId, runId);
+        audit.put("performDate", performDate.toString());
+        audit.put("recordsReturned", entries.size());
+        markSuccessDetails(audit);
+        recordAudit(request, AUDIT_READ_ACTION, audit, AuditEventEnvelope.Outcome.SUCCESS);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("apiResult", "00");
+        response.put("apiResultMessage", "処理終了");
+        response.put("runId", runId);
+        response.put("routeNamespace", ROUTE_NAMESPACE);
+        response.put("patientId", patientId);
+        response.put("performDate", performDate.toString());
+        response.put("entries", entries);
+        return response;
+    }
+
+    private SubjectiveEntryResponse.Entry toStoredEntry(DocumentModel document, String patientId) {
+        if (document == null || document.getModules() == null || document.getModules().size() != 1) {
+            return null;
+        }
+        ModuleModel module = document.getModules().get(0);
+        if (module.getModuleInfoBean() == null
+                || !IInfoModel.MODULE_PROGRESS_COURSE.equals(module.getModuleInfoBean().getEntity())) {
+            return null;
+        }
+        Object model = module.getModel() != null ? module.getModel() : ModelUtils.decodeModule(module);
+        if (!(model instanceof ProgressCourse progress) || progress.getFreeText() == null
+                || progress.getFreeText().isBlank()) {
+            return null;
+        }
+        String displaySection = displaySectionForTitle(document.getDocInfoModel().getTitle(),
+                module.getModuleInfoBean().getStampRole());
+        String soapCategory = categoryForDisplaySection(displaySection);
+        Date performDate = document.getStarted();
+        SubjectiveEntryResponse.Entry entry = new SubjectiveEntryResponse.Entry();
+        entry.setDocumentId(document.getId());
+        entry.setEntryId("local-subjective-" + document.getId() + "-" + displaySection);
+        entry.setPatientId(patientId);
+        entry.setPerformDate(performDate != null ? ModelUtils.getDateAsString(performDate) : null);
+        entry.setSoapCategory(soapCategory);
+        entry.setDisplaySection(displaySection);
+        entry.setBody(progress.getFreeText());
+        entry.setRecordedAt(document.getRecorded() != null ? document.getRecorded().toInstant().toString() : null);
+        try {
+            UserModel author = document.getUserModel();
+            if (author != null) {
+                entry.setAuthorUserId(author.getUserId());
+                entry.setAuthorName(author.getCommonName());
+            }
+        } catch (RuntimeException ex) {
+            // author is optional on read-back (lazy association may be unavailable outside the service tx)
+        }
+        if (performDate != null) {
+            entry.setContentHash(contentHash(patientId, performDate, soapCategory, displaySection,
+                    progress.getFreeText(), null));
+        }
+        return entry;
+    }
+
+    private static String displaySectionForTitle(String title, String stampRole) {
+        for (Map.Entry<String, String> candidate : TITLE_BY_SECTION.entrySet()) {
+            if (candidate.getValue().equals(title) && !TITLE_FREE.equals(title)) {
+                return candidate.getKey();
+            }
+        }
+        // Legacy rows were all titled 主訴; only the P/SOA stamp role survives.
+        return IInfoModel.ROLE_P_SPEC.equals(stampRole) ? "plan" : "free";
+    }
+
+    private void failSubjectiveReadRequest(HttpServletRequest request, Map<String, Object> audit, String field,
+            String message) {
+        audit.put("validationError", Boolean.TRUE);
+        audit.put("field", field);
+        markFailureDetails(audit, Response.Status.BAD_REQUEST.getStatusCode(), "invalid_request", message);
+        recordAudit(request, AUDIT_READ_ACTION, audit, AuditEventEnvelope.Outcome.FAILURE);
+        throw validationError(request, field, message);
     }
 
     private long persistSubjectiveDocument(HttpServletRequest request, DocumentModel document, String facilityId,
@@ -330,7 +489,7 @@ public class LocalChartSubjectiveResource extends AbstractOrcaRestResource {
     }
 
     private DocumentModel buildSubjectiveDocument(KarteBean karte, UserModel user, SubjectiveEntryRequest payload,
-            Date performDate, String body, String soapCategory) {
+            Date performDate, String body, String soapCategory, String displaySection) {
         Date now = new Date();
         DocumentModel document = new DocumentModel();
         document.setKarteBean(karte);
@@ -343,7 +502,8 @@ public class LocalChartSubjectiveResource extends AbstractOrcaRestResource {
         String docId = UUID.randomUUID().toString().replace("-", "");
         document.getDocInfoModel().setDocId(docId);
         document.getDocInfoModel().setDocType(IInfoModel.DOCTYPE_KARTE);
-        document.getDocInfoModel().setTitle("主訴");
+        // The title records the display section so GET /subjectives can restore it (S/O/A share one stamp role).
+        document.getDocInfoModel().setTitle(TITLE_BY_SECTION.getOrDefault(displaySection, TITLE_FREE));
         document.getDocInfoModel().setPurpose(IInfoModel.PURPOSE_RECORD);
         document.getDocInfoModel().setVersionNumber("1.0");
 

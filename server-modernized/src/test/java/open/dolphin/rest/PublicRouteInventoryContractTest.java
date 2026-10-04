@@ -65,6 +65,7 @@ class PublicRouteInventoryContractTest {
             "POST /api/orca/master/order/interactions/check");
 
     private static final Set<String> EXPECTED_LOCAL_ROUTE_KEYS = Set.of(
+            "GET /api/local/charts/subjectives",
             "GET /api/local/diagnoses/{*}",
             "GET /api/local/encounters/{*}/medical-summary",
             "GET /api/local/encounters/orca-transmissions/review",

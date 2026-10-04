@@ -88,3 +88,28 @@ export async function postChartSubjectiveEntry(
     entry: parseReadbackEntry(json.entry),
   };
 }
+
+export type ChartSubjectiveEntryListResponse = {
+  ok: boolean;
+  status: number;
+  entries: ChartSubjectiveEntryReadback[];
+};
+
+/** 院内ローカル保存済みの SOAP/F 記載を診療日単位で取得する（カルテ再表示時の復元用）。 */
+export async function fetchChartSubjectiveEntries(params: {
+  patientId: string;
+  performDate?: string;
+}): Promise<ChartSubjectiveEntryListResponse> {
+  const query = new URLSearchParams({ patientId: params.patientId });
+  if (params.performDate) query.set('performDate', params.performDate);
+  const response = await httpFetch(`/api/local/charts/subjectives?${query.toString()}`, { method: 'GET' });
+  const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  const rawEntries = Array.isArray(json.entries) ? json.entries : [];
+  return {
+    ok: response.ok,
+    status: response.status,
+    entries: rawEntries
+      .map((entry) => parseReadbackEntry(entry))
+      .filter((entry): entry is ChartSubjectiveEntryReadback => Boolean(entry?.displaySection && entry.body)),
+  };
+}

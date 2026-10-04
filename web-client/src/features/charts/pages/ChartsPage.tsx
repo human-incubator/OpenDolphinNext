@@ -45,6 +45,7 @@ import { refetchOfficialCanonicalPatients, searchLocalPatients, type PatientReco
 import { getAuditEventLog, logAuditEvent, logUiState, type AuditEventRecord } from '../../../libs/audit/auditLogger';
 import { buildUnavailableMedicalSummary, fetchChartsMedicalSummary } from '../api';
 import { openChartEncounter } from '../encounterTransitionApi';
+import { fetchChartSubjectiveEntries } from '../soap/subjectiveChartApi';
 import { closeAndSendToBilling } from '../closeAndSendBillingApi';
 import { fetchKarteIdByPatientId, type LetterModulePayload } from '../letterApi';
 import { fetchOrderBundlesWithPatientImportRecovery, mutateOrderBundles, type OrderBundle } from '../orderBundleApi';
@@ -1454,6 +1455,62 @@ function ChartsContent({ onRequestHardReload }: { onRequestHardReload: () => voi
       }
     }
   }, [soapEncounterKey, storageScope]);
+
+  // カルテを開き直した際、サーバーに保存済みの SOAP/F 記載（院内ローカル保存）を履歴へ復元する。
+  // 履歴はセッションストレージのみに保持されるため、別タブ・再ログイン・キー変化で失われる。
+  const restoredSoapHistoryKeysRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const patientId = normalizeEncounterId(encounterContext.patientId);
+    const visitDate = normalizeVisitDate(encounterContext.visitDate);
+    if (!patientId || !visitDate) return;
+    const restoreKey = soapEncounterKey;
+    if (restoredSoapHistoryKeysRef.current.has(restoreKey)) return;
+    restoredSoapHistoryKeysRef.current.add(restoreKey);
+    let canceled = false;
+    void fetchChartSubjectiveEntries({ patientId, performDate: visitDate })
+      .then((result) => {
+        if (canceled || !result.ok || result.entries.length === 0) return;
+        const restored: SoapEntry[] = result.entries.map((entry) => {
+          const section = entry.displaySection as SoapSectionKey;
+          return {
+            id: entry.entryId ?? `local-subjective-${entry.documentId ?? 'unknown'}-${section}`,
+            section,
+            body: entry.body ?? '',
+            authoredAt: entry.recordedAt ?? `${visitDate}T00:00:00Z`,
+            authorRole: 'server',
+            authorName: entry.authorName,
+            action: 'save',
+            baseChartRevisionId: entry.baseChartRevisionId,
+            contentHash: entry.contentHash,
+            patientId,
+            appointmentId: encounterContext.appointmentId,
+            receptionId: encounterContext.receptionId,
+            visitDate: entry.performDate ?? visitDate,
+          };
+        });
+        setSoapHistoryByEncounter((prev) => {
+          const existing = prev[restoreKey] ?? [];
+          const knownIds = new Set(existing.map((entry) => entry.id));
+          const missing = restored.filter((entry) => !knownIds.has(entry.id));
+          if (missing.length === 0) return prev;
+          const merged = [...existing, ...missing].sort((left, right) => left.authoredAt.localeCompare(right.authoredAt));
+          return { ...prev, [restoreKey]: merged.slice(-SOAP_HISTORY_MAX_ENTRIES) };
+        });
+      })
+      .catch(() => {
+        restoredSoapHistoryKeysRef.current.delete(restoreKey);
+      });
+    return () => {
+      canceled = true;
+      restoredSoapHistoryKeysRef.current.delete(restoreKey);
+    };
+  }, [
+    encounterContext.appointmentId,
+    encounterContext.patientId,
+    encounterContext.receptionId,
+    encounterContext.visitDate,
+    soapEncounterKey,
+  ]);
 
   const [documentImageAttachments, setDocumentImageAttachments] = useState<ChartImageAttachment[]>([]);
   const [pendingSoapAttachment, setPendingSoapAttachment] = useState<{

@@ -150,6 +150,39 @@ class LocalChartSubjectiveResourceTest extends RuntimeDelegateTestSupport {
     }
 
     @Test
+    void getSubjectivesReadsBackSavedSectionsForPerformDate() {
+        SubjectiveEntryRequest free = validSubjectiveRequest();
+        resource.postSubjective(servletRequest, free);
+        DocumentModel freeDoc = fakeKarteServiceBean.getLastAddedDocument();
+        SubjectiveEntryRequest objective = new SubjectiveEntryRequest();
+        objective.setPatientId("00001");
+        objective.setSoapCategory("O");
+        objective.setDisplaySection("objective");
+        objective.setPerformDate("2026-04-10");
+        objective.setBody("咽頭発赤");
+        resource.postSubjective(servletRequest, objective);
+        DocumentModel objectiveDoc = fakeKarteServiceBean.getLastAddedDocument();
+        assertEquals("O 客観", objectiveDoc.getDocInfoModel().getTitle());
+        fakeKarteServiceBean.storeForRead(9001L, freeDoc);
+        fakeKarteServiceBean.storeForRead(9002L, objectiveDoc);
+
+        Map<String, Object> response = resource.getSubjectives(servletRequest, "00001", "2026-04-10");
+
+        assertEquals("00", response.get("apiResult"));
+        @SuppressWarnings("unchecked")
+        java.util.List<SubjectiveEntryResponse.Entry> entries =
+                (java.util.List<SubjectiveEntryResponse.Entry>) response.get("entries");
+        assertEquals(2, entries.size());
+        assertEquals("free", entries.get(0).getDisplaySection());
+        assertEquals("S", entries.get(0).getSoapCategory());
+        assertEquals("咽頭痛あり", entries.get(0).getBody());
+        assertEquals("objective", entries.get(1).getDisplaySection());
+        assertEquals("O", entries.get(1).getSoapCategory());
+        assertEquals("咽頭発赤", entries.get(1).getBody());
+        assertEquals("2026-04-10", entries.get(1).getPerformDate());
+    }
+
+    @Test
     void postSubjectiveRejectsExistingEntryUpdateAttempt() {
         SubjectiveEntryRequest payload = validSubjectiveRequest();
         payload.setEntryId("local-subjective-9001-free");
@@ -416,6 +449,38 @@ class LocalChartSubjectiveResourceTest extends RuntimeDelegateTestSupport {
 
         void setFailure(RuntimeException failure) {
             this.failure = failure;
+        }
+
+        private final java.util.Map<Long, DocumentModel> stored = new java.util.LinkedHashMap<>();
+
+        void storeForRead(long id, DocumentModel document) {
+            document.setId(id);
+            document.setRecorded(new java.util.Date(id));
+            document.getDocInfoModel().setDocPk(id);
+            document.getDocInfoModel().setFirstConfirmDate(document.getStarted());
+            stored.put(id, document);
+        }
+
+        @Override
+        public KarteBean getKarte(String fid, String pid, java.util.Date fromDate) {
+            KarteBean karte = new KarteBean();
+            karte.setId(20L);
+            return karte;
+        }
+
+        @Override
+        public java.util.List<open.dolphin.infomodel.DocInfoModel> getDocumentList(long karteId, java.util.Date fromDate,
+                boolean includeModifid) {
+            java.util.List<open.dolphin.infomodel.DocInfoModel> infos = new java.util.ArrayList<>();
+            stored.values().forEach(document -> infos.add(document.getDocInfoModel()));
+            return infos;
+        }
+
+        @Override
+        public java.util.List<DocumentModel> getDocumentsWithModules(java.util.List<Long> ids) {
+            java.util.List<DocumentModel> documents = new java.util.ArrayList<>();
+            ids.forEach(id -> documents.add(stored.get(id)));
+            return documents;
         }
 
         @Override
