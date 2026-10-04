@@ -1058,7 +1058,7 @@ class OrcaMasterResourceTest {
 
 
     @Test
-    void getEtensu_emptyResult_returnsNotFound() {
+    void getEtensu_emptyResult_returnsOkWithEmptyItems() {
         OrcaMasterResource resource = new OrcaMasterResource(new EtensuDao() {
             @Override
             public EtensuSearchResult search(EtensuSearchCriteria criteria) {
@@ -1071,9 +1071,10 @@ class OrcaMasterResourceTest {
 
         Response response = resource.getEtensu(null, uriInfo, authenticatedRequest());
 
-        assertEquals(404, response.getStatus());
-        OrcaMasterErrorResponse payload = (OrcaMasterErrorResponse) response.getEntity();
-        assertEquals("TENSU_NOT_FOUND", payload.getCode());
+        assertEquals(200, response.getStatus());
+        @SuppressWarnings("unchecked")
+        OrcaMasterListResponse<OrcaTensuEntry> payload = (OrcaMasterListResponse<OrcaTensuEntry>) response.getEntity();
+        assertTrue(payload.getItems().isEmpty());
     }
 
     @Test
@@ -1309,7 +1310,7 @@ class OrcaMasterResourceTest {
 
         Response response = resource.getEtensu(null, uriInfo, authenticatedRequest());
 
-        assertEquals(404, response.getStatus());
+        assertEquals(200, response.getStatus());
         assertNotNull(captured[0]);
         assertEquals(20d, captured[0].getPointsMin());
         assertEquals(40d, captured[0].getPointsMax());
@@ -1331,7 +1332,7 @@ class OrcaMasterResourceTest {
 
         Response response = resource.getEtensu(null, uriInfo, authenticatedRequest());
 
-        assertEquals(404, response.getStatus());
+        assertEquals(200, response.getStatus());
         assertNotNull(captured[0]);
         assertEquals(12.5d, captured[0].getPointsMin());
         assertNull(captured[0].getPointsMax());
@@ -1353,7 +1354,7 @@ class OrcaMasterResourceTest {
 
         Response response = resource.getEtensu(null, uriInfo, authenticatedRequest());
 
-        assertEquals(404, response.getStatus());
+        assertEquals(200, response.getStatus());
         assertNotNull(captured[0]);
         assertNull(captured[0].getPointsMin());
         assertEquals(88d, captured[0].getPointsMax());

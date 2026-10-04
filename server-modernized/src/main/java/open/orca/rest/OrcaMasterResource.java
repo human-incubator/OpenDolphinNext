@@ -17,7 +17,6 @@ import jakarta.ws.rs.core.EntityTag;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.Response.Status;
 import jakarta.ws.rs.core.UriInfo;
 import open.orca.rest.OrcaMasterFixtureSupport.DataOrigin;
 import open.orca.rest.OrcaMasterFixtureSupport.FixtureAddressEntry;
@@ -510,13 +509,7 @@ public class OrcaMasterResource extends AbstractResource {
             Map<String, String> perfHeaders = buildEtensuPerformanceHeaders(dbResult, true);
             return buildNotModifiedResponse(etagValue, ttlSeconds, perfHeaders);
         }
-        if (dbResult.getRecords().isEmpty()) {
-            Response notFound = errorResponseSupport().buildErrorResponse(Status.NOT_FOUND, "TENSU_NOT_FOUND",
-                    "no etensu entries matched", request, basePerfHeaders);
-            recordMasterAudit(request, "/api/orca/master/etensu", masterType, 404, dbFixture, false, true, 0,
-                    true, true, etensuAuditDetails);
-            return notFound;
-        }
+        // A search with no matches is a normal 200 with an empty list (not 404), like the other master searches.
         final Integer totalCount = dbResult.getTotalCount();
         final List<OrcaTensuEntry> items = new ArrayList<>(dbResult.getRecords().size());
         for (EtensuDao.EtensuRecord entry : dbResult.getRecords()) {
