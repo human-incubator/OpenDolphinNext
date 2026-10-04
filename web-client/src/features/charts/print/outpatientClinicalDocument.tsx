@@ -17,6 +17,17 @@ type OutpatientClinicalDocumentProps = {
   meta: ChartsPrintMeta;
 };
 
+// ORCA / 院内で混在する性別コード（1/2, M/F, male/female）を表示用ラベルに揃える。
+export const formatPrintSex = (sex?: string | null): string => {
+  const safe = sex?.trim();
+  if (!safe) return '-';
+  const normalized = safe.toLowerCase();
+  if (normalized === '1' || normalized === 'm' || normalized === 'male' || normalized === '男性') return '男';
+  if (normalized === '2' || normalized === 'f' || normalized === 'female' || normalized === '女性') return '女';
+  if (normalized === '9') return '不明';
+  return safe;
+};
+
 const formatPrintedAt = (iso: string) => {
   try {
     const date = new Date(iso);
@@ -74,7 +85,7 @@ export function OutpatientClinicalDocument({
             </div>
             <div className="charts-print__row">
               <div className="charts-print__key">性別</div>
-              <div className="charts-print__value">{entry.sex ?? '-'}</div>
+              <div className="charts-print__value">{formatPrintSex(entry.sex)}</div>
             </div>
             <div className="charts-print__row">
               <div className="charts-print__key">保険</div>

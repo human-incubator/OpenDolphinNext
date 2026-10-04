@@ -238,7 +238,8 @@ const searchOfficialReceptionPatients = async (filters: ReceptionPatientSearchFi
 
   const fullName = `${filters.nameSei.trim()} ${filters.nameMei.trim()}`.trim();
   const fullKana = `${filters.kanaSei.trim()} ${filters.kanaMei.trim()}`.trim();
-  const result = await fetchPatientMasterSearch({ name: fullName, kana: fullKana });
+  // ORCA patientlst3v2 の WholeName は漢字・カナどちらでも検索できるため、カナのみ入力時はカナで氏名検索する。
+  const result = await fetchPatientMasterSearch({ name: fullName || fullKana, kana: fullKana });
   return {
     patients: result.patients.map(toPatientRecordFromMaster),
     runId: result.runId ?? runId,
@@ -3553,7 +3554,12 @@ export function ReceptionPage({
       setPatientSearchSelected(null);
       setAcceptPatientId('');
       setAcceptWorkflowModalOpen(true);
-      await patientSearchMutation.mutateAsync(filters);
+      try {
+        await patientSearchMutation.mutateAsync(filters);
+      } catch {
+        // エラー表示は patientSearchMutation.onError で行う（未処理の Promise rejection にしない）。
+        return;
+      }
       logUiState({
         action: 'patient_search',
         screen: 'reception',
@@ -3894,14 +3900,16 @@ export function ReceptionPage({
         return;
       }
       setMasterSearchError(null);
-      await masterSearchMutation.mutateAsync({
-        name: trimmedName || undefined,
-        kana: masterSearchFilters.kana.trim() || undefined,
-        birthStartDate: masterSearchFilters.birthStartDate || undefined,
-        birthEndDate: masterSearchFilters.birthEndDate || undefined,
-        sex: masterSearchFilters.sex || undefined,
-        inOut: masterSearchFilters.inOut || undefined,
-      });
+      await masterSearchMutation
+        .mutateAsync({
+          name: trimmedName || undefined,
+          kana: masterSearchFilters.kana.trim() || undefined,
+          birthStartDate: masterSearchFilters.birthStartDate || undefined,
+          birthEndDate: masterSearchFilters.birthEndDate || undefined,
+          sex: masterSearchFilters.sex || undefined,
+          inOut: masterSearchFilters.inOut || undefined,
+        })
+        .catch(() => undefined); // エラー表示は masterSearchMutation.onError で行う
     },
     [masterSearchFilters, masterSearchMutation],
   );
