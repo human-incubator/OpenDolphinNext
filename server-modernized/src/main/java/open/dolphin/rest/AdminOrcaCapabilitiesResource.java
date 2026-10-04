@@ -14,14 +14,16 @@ import java.util.Map;
 import open.dolphin.rest.orca.AbstractOrcaRestResource;
 import open.dolphin.session.UserServiceBean;
 
-@Path("/admin/orca")
+// Class-level path must stay "/admin": a more specific "/admin/orca" root would shadow
+// AdminOrcaUserResource (/admin + /orca/users, /orca/sync) under JAX-RS root matching (RESTEasy003210).
+@Path("/admin")
 public class AdminOrcaCapabilitiesResource extends AbstractResource {
 
     @Inject
     private UserServiceBean userServiceBean;
 
     @GET
-    @Path("/capabilities")
+    @Path("/orca/capabilities")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getCapabilities(@Context HttpServletRequest request) {
         String runId = AbstractOrcaRestResource.resolveRunIdValue(request);
