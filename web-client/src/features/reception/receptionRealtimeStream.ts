@@ -1,3 +1,4 @@
+import { withBasePath } from '../../libs/http/basePath';
 import { httpFetch } from '../../libs/http/httpClient';
 
 const DEFAULT_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '');
@@ -183,7 +184,8 @@ export function startReceptionRealtimeStream(options: ReceptionRealtimeStreamOpt
     return () => {};
   }
 
-  const streamUrl = `${apiBaseUrl}${RECEPTION_STREAM_PATH}`;
+  // VITE_API_BASE_URL may already include the sub-path (/medical_chart/api); withBasePath is idempotent.
+  const streamUrl = withBasePath(`${apiBaseUrl}${RECEPTION_STREAM_PATH}`);
   let currentSource: EventSource | null = null;
   let currentController: AbortController | null = null;
   let reconnectTimer: number | null = null;

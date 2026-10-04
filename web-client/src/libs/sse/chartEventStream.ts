@@ -1,3 +1,4 @@
+import { withBasePath } from '../http/basePath';
 import { buildHttpHeaders } from '../http/httpClient';
 
 const DEFAULT_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '');
@@ -187,7 +188,8 @@ export function startChartEventStream(options: ChartEventStreamOptions) {
           throw new Error('chart-events actor context is missing');
         }
         const lastEventId = readStoredLastEventId(facilityId, resolvedUserId, resolvedClientUuid);
-        const streamUrl = `${apiBaseUrl}${CHART_EVENT_STREAM_PATH}`;
+        // VITE_API_BASE_URL may already include the sub-path (/medical_chart/api); withBasePath is idempotent.
+        const streamUrl = withBasePath(`${apiBaseUrl}${CHART_EVENT_STREAM_PATH}`);
         const headers = new Headers(
           buildHttpHeaders({
             headers: {

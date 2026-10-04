@@ -1,4 +1,5 @@
 import { useOptionalSession } from '../../AppRouter';
+import { withBasePath } from '../../libs/http/basePath';
 import { buildFacilityPath } from '../../routes/facilityRoutes';
 
 export function OutpatientMockPage() {
@@ -14,7 +15,7 @@ export function OutpatientMockPage() {
         <div className="status-message" role="status">
           <p>検証は 受付 / Charts / 管理画面 の現行導線で実施してください。</p>
           {session ? (
-            <a className="facility-entry__secondary" href={buildFacilityPath(session.facilityId, '/reception')}>
+            <a className="facility-entry__secondary" href={withBasePath(buildFacilityPath(session.facilityId, '/reception'))}>
               受付を開く
             </a>
           ) : null}

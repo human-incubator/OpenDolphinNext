@@ -1,4 +1,5 @@
 import { logAuditEvent } from '../../libs/audit/auditLogger';
+import { withBasePath } from '../../libs/http/basePath';
 import { buildHttpHeaders, httpFetch } from '../../libs/http/httpClient';
 import { captureObservabilityFromResponse, ensureObservabilityMeta, getObservabilityMeta } from '../../libs/observability/observability';
 import { fetchPatientImages } from './patientImagesApi';
@@ -579,7 +580,7 @@ export function sendKarteDocumentWithAttachmentsViaXhr(
 
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
-    xhr.open(method, endpoint, true);
+    xhr.open(method, withBasePath(endpoint), true);
 
     const headers = buildHttpHeaders({
       method,

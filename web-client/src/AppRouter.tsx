@@ -83,6 +83,7 @@ import {
 } from './features/charts/encounterContext';
 import { saveDeepLinkContext } from './routes/deepLinkContextStorage';
 import { scrubSearch } from './routes/scrubSensitiveUrl';
+import { withBasePath } from './libs/http/basePath';
 import { normalizeSessionResult, type SessionAuthResponse } from './LoginScreen';
 
 type Session = LoginResult;
@@ -1598,7 +1599,7 @@ function AppLayout({ onLogout }: { onLogout: () => void }) {
   }, []);
 
   const handleReturnToReceptionFromError = useCallback(() => {
-    window.location.assign(buildFacilityPath(session.facilityId, '/reception'));
+    window.location.assign(withBasePath(buildFacilityPath(session.facilityId, '/reception')));
   }, [session.facilityId]);
 
   const handleCopyErrorMeta = useCallback(async () => {

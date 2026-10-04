@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, type Location } from 'react-router-dom';
 
+import { withBasePath } from '../../libs/http/basePath';
 import { buildFacilityPath, normalizeFacilityId, parseFacilityPath } from '../../routes/facilityRoutes';
 import { FacilityLoginEntry } from './FacilityLoginEntry';
 import { resolveLoginNotice } from './loginRedirect';
@@ -20,7 +21,7 @@ const isSingleFacilityLoginEnabled = () => {
 const loadFacilityIdFromJson = async (): Promise<string | undefined> => {
   if (typeof fetch === 'undefined') return undefined;
   try {
-    const response = await fetch('/facility.json', { cache: 'no-store' });
+    const response = await fetch(withBasePath('/facility.json'), { cache: 'no-store' });
     if (!response.ok) return undefined;
     const data = (await response.json()) as FacilityJson;
     if (!data || typeof data !== 'object') return undefined;

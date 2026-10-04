@@ -1,3 +1,4 @@
+import { getBasePath, withBasePath } from '../../libs/http/basePath';
 import { buildHttpHeaders, httpFetch } from '../../libs/http/httpClient';
 import { captureObservabilityFromResponse, ensureObservabilityMeta, getObservabilityMeta } from '../../libs/observability/observability';
 
@@ -94,6 +95,34 @@ const parseBody = async (response: Response): Promise<{ rawText: string; json?: 
   }
 };
 
+const BACKEND_PATIENT_IMAGE_PATH = /\/(?:openDolphin\/(?:api|resources)|api)(\/patients\/.+)$/;
+
+/**
+ * Sub-path deployment: the server builds downloadUrl from its own request URI
+ * (e.g. http://backend/openDolphin/api/patients/P/images/1), which is not reachable through the
+ * reverse proxy. Rewrite it to the client-facing `${BASE_PATH}/api/patients/...` path.
+ * With BASE_PATH='/' the value is returned unchanged (legacy behavior).
+ */
+export const toClientImageUrl = (raw: string): string => {
+  if (getBasePath() === '/') return raw;
+  if (raw.startsWith('/') && !raw.startsWith('//')) {
+    const match = raw.match(/^([^?#]*)(.*)$/);
+    const path = match?.[1] ?? raw;
+    const suffix = match?.[2] ?? '';
+    const backend = path.match(BACKEND_PATIENT_IMAGE_PATH);
+    if (backend && path.startsWith('/openDolphin/')) return withBasePath(`/api${backend[1]}${suffix}`);
+    return withBasePath(raw);
+  }
+  try {
+    const parsed = new URL(raw);
+    const backend = parsed.pathname.match(BACKEND_PATIENT_IMAGE_PATH);
+    if (!backend || !parsed.pathname.startsWith('/openDolphin/')) return raw;
+    return withBasePath(`/api${backend[1]}${parsed.search}${parsed.hash}`);
+  } catch {
+    return raw;
+  }
+};
+
 const normalizeListItem = (entry: unknown): PatientImageListItem | null => {
   const record = asRecord(entry);
   if (!record) return null;
@@ -112,7 +141,7 @@ const normalizeListItem = (entry: unknown): PatientImageListItem | null => {
     contentType,
     size,
     createdAt,
-    downloadUrl,
+    downloadUrl: toClientImageUrl(downloadUrl),
   };
 };
 
@@ -202,7 +231,7 @@ export function uploadPatientImageFile(params: {
 
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', endpoint, true);
+    xhr.open('POST', withBasePath(endpoint), true);
 
     const headers = buildFeatureHeaders({ method: 'POST' }, endpoint);
     Object.entries(headers).forEach(([key, value]) => {

@@ -3,6 +3,7 @@ import { applyObservabilityHeaders, captureObservabilityFromResponse } from '../
 import { notifySessionExpired } from '../session/sessionExpiry';
 import { readStoredSession } from '../session/storedSession';
 import { readCsrfToken } from '../security/csrf';
+import { stripBasePath, withBasePath } from './basePath';
 
 export function hasStoredAuth(): boolean {
   return readStoredSession() !== null;
@@ -21,7 +22,12 @@ const resolveUrl = (input?: string | URL | null): URL | null => {
   const trimmed = input.trim();
   if (!trimmed) return null;
   try {
-    return new URL(trimmed, resolveBaseOrigin());
+    // Sub-path deployment: root-relative paths ("/api/...") are served under VITE_BASE_PATH.
+    // Scheme-less relative paths ("api/...") were always resolved against the origin root, so keep
+    // that meaning and apply the same prefix.
+    const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed);
+    const rootRelative = !hasScheme && !trimmed.startsWith('/') ? `/${trimmed}` : trimmed;
+    return new URL(withBasePath(rootRelative), resolveBaseOrigin());
   } catch {
     return null;
   }
@@ -257,14 +263,14 @@ const isMissingCsrfAllowedRuntime = () => {
 const isUpstreamAuthEndpoint = (url?: URL | null): boolean => {
   if (!url) return false;
   const pattern = /^\/(orca|api\/orca|blobapi|karte|odletter|user)(\/|$)/;
-  return pattern.test(url.pathname);
+  return pattern.test(stripBasePath(url.pathname));
 };
 
 const shouldUseNoStoreCache = (url?: URL | null, method = 'GET') => {
   if (!url || !isSameOrigin(url) || method !== 'GET') {
     return false;
   }
-  return /^\/(karte|odletter|letter|user|api\/session)(\/|$)/.test(url.pathname);
+  return /^\/(karte|odletter|letter|user|api\/session)(\/|$)/.test(stripBasePath(url.pathname));
 };
 
 const applyCsrfHeaders = (init?: RequestInit, url?: URL | null): RequestInit => {

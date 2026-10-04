@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 
 import { useSession } from '../../AppRouter';
+import { withBasePath } from '../../libs/http/basePath';
 import { buildFacilityPath } from '../../routes/facilityRoutes';
 import { resolveAriaLive } from '../../libs/observability/observability';
 
@@ -63,7 +64,7 @@ export function DebugHubPage() {
         </div>
         <div className="login-form__actions" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '0.75rem' }}>
           {links.map((link) => (
-            <a key={link.href} href={link.href} className="facility-entry__secondary" style={{ textAlign: 'left' }}>
+            <a key={link.href} href={withBasePath(link.href)} className="facility-entry__secondary" style={{ textAlign: 'left' }}>
               <strong>{link.label}</strong>
               <span style={{ display: 'block', fontSize: '0.85rem', opacity: 0.8 }}>{link.description}</span>
               <span style={{ display: 'block', fontSize: '0.75rem', opacity: 0.6 }}>{link.href}</span>

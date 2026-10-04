@@ -1,4 +1,5 @@
 import { useSession } from '../../AppRouter';
+import { withBasePath } from '../../libs/http/basePath';
 import { buildFacilityPath } from '../../routes/facilityRoutes';
 
 export function OrcaApiConsolePage() {
@@ -13,7 +14,7 @@ export function OrcaApiConsolePage() {
         </header>
         <div className="status-message" role="status">
           <p>運用確認は管理画面の「運用監視」を利用してください。</p>
-          <a className="facility-entry__secondary" href={buildFacilityPath(session.facilityId, '/administration?section=operations')}>
+          <a className="facility-entry__secondary" href={withBasePath(buildFacilityPath(session.facilityId, '/administration?section=operations'))}>
             管理画面 / 運用監視を開く
           </a>
         </div>
