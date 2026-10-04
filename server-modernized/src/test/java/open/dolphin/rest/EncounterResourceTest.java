@@ -76,6 +76,44 @@ class EncounterResourceTest {
         assertEquals("idem-001", body.get("idempotencyKey"));
     }
 
+    @Test
+    void transitionEncounterRejectsOtherFacilityEncounter() {
+        assertThrows(NotFoundException.class, () -> resource.transitionEncounter(request, "F999:A100", Map.of(
+                "operation", "cancel",
+                "facilityId", "F999",
+                "patientId", "00001",
+                "karteId", 1001L,
+                "requestId", "req-001",
+                "traceId", "trace-001",
+                "idempotencyKey", "idem-001")));
+        assertEquals(null, transitionService.lastCommand);
+    }
+
+    @Test
+    void transitionEncounterRejectsSpoofedPayloadFacility() {
+        assertThrows(NotFoundException.class, () -> resource.transitionEncounter(request, "F001:A100", Map.of(
+                "operation", "cancel",
+                "facilityId", "F999",
+                "patientId", "00001",
+                "karteId", 1001L,
+                "requestId", "req-001",
+                "traceId", "trace-001",
+                "idempotencyKey", "idem-001")));
+        assertEquals(null, transitionService.lastCommand);
+    }
+
+    @Test
+    void transitionEncounterUsesSessionFacility() {
+        resource.transitionEncounter(request, "F001:A100", Map.of(
+                "operation", "chart_open",
+                "patientId", "00001",
+                "karteId", 1001L,
+                "requestId", "req-001",
+                "traceId", "trace-001",
+                "idempotencyKey", "idem-001"));
+        assertEquals("F001", transitionService.lastCommand.facilityId());
+    }
+
     private static void setField(Object target, String fieldName, Object value) throws Exception {
         Field field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
@@ -127,8 +165,11 @@ class EncounterResourceTest {
     }
 
     private static final class StubEncounterTransitionService extends EncounterTransitionService {
+        private TransitionCommand lastCommand;
+
         @Override
         public TransitionResult transition(TransitionCommand command) {
+            lastCommand = command;
             return new TransitionResult(
                     command.encounterKey(),
                     "F001:S100",

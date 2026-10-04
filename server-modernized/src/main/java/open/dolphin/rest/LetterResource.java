@@ -14,11 +14,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import open.dolphin.converter.LetterModuleConverter;
 import open.dolphin.converter.LetterModuleListConverter;
 import open.dolphin.infomodel.IInfoModel;
 import open.dolphin.infomodel.LetterModule;
 import open.dolphin.infomodel.LetterModuleList;
+import open.dolphin.infomodel.UserModel;
 import open.dolphin.security.audit.AuditDetailSanitizer;
 import open.dolphin.session.LetterServiceBean;
 import open.dolphin.security.audit.AuditEventPayload;
@@ -64,6 +66,21 @@ public class LetterResource extends AbstractResource {
         String fid = requireActorFacility(httpServletRequest);
 
         LetterModule model = readJson(json, LetterModule.class);
+        if (model == null) {
+            throw restError(httpServletRequest, Response.Status.BAD_REQUEST, "invalid_request", "letter payload is required.");
+        }
+        // 記載者 (creator) はクライアント指定を無視し、セッションのユーザーにする
+        UserModel actor = null;
+        try {
+            actor = userServiceBean != null ? userServiceBean.getUser(httpServletRequest.getRemoteUser()) : null;
+        } catch (RuntimeException ex) {
+            actor = null;
+        }
+        if (actor == null) {
+            throw restError(httpServletRequest, Response.Status.UNAUTHORIZED, "unauthorized",
+                    "Authenticated user could not be resolved.");
+        }
+        model.setUserModel(actor);
         
         Logger.getLogger("open.dolphin").log(Level.INFO, "LinkID : {0}, PatID : {1}", new Object[]{String.valueOf(model.getLinkId()), model.getPatientId()});
 

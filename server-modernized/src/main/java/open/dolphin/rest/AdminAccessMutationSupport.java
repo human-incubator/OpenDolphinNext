@@ -61,6 +61,7 @@ final class AdminAccessMutationSupport {
         String actor = resource.requireAdminActor(request, runId);
         String facilityId = resource.getRemoteFacility(actor);
         CreateUserInput input = parseCreateUserInput(resource, request, payload);
+        ensureRolesGrantable(resource, request, actor, List.of(), input.roles());
         UserModel user = persistNewUser(input, facilityId);
         AdminAccessResource.UserAccessProfileRow profile =
                 resource.upsertProfile(user.getId(), input.sex(), input.staffRole(), null, Instant.now());
@@ -120,6 +121,7 @@ final class AdminAccessMutationSupport {
             throw resource.restError(request, Response.Status.NOT_FOUND, "user_not_found", "ユーザーが見つかりません。");
         }
         requireSameFacility(resource, request, facilityId, target.getUserId());
+        requireSystemAdminForSystemAdminTarget(resource, request, actor, target);
 
         if (payload == null) {
             throw resource.restError(request, Response.Status.BAD_REQUEST, "payload_required", "payload が必要です。");
@@ -333,6 +335,7 @@ final class AdminAccessMutationSupport {
             throw resource.restError(request, Response.Status.NOT_FOUND, "user_not_found", "ユーザーが見つかりません。");
         }
         requireSameFacility(resource, request, facilityId, user.getUserId());
+        requireSystemAdminForSystemAdminTarget(resource, request, actor, user);
         if (input.displayName() != null) user.setCommonName(input.displayName());
         if (input.sirName() != null) user.setSirName(input.sirName());
         if (input.givenName() != null) user.setGivenName(input.givenName());
@@ -354,6 +357,7 @@ final class AdminAccessMutationSupport {
         if (!containsRole(roles, BASELINE_ROLE)) {
             roles.add(BASELINE_ROLE);
         }
+        ensureRolesGrantable(resource, request, actor, currentRoles, roles);
         if (hasPrivilegedRoles(roles)) {
             AdminAccessResource.OrcaLinkStatus effectiveLink = orcaLink != null ? orcaLink : findOrcaLinkByUserPk(facilityId, userPk);
             if (effectiveLink == null) {
@@ -435,6 +439,36 @@ final class AdminAccessMutationSupport {
                 null,
                 null,
                 "/api/admin/access");
+    }
+
+    private void ensureRolesGrantable(
+            AdminAccessResource resource,
+            HttpServletRequest request,
+            String actor,
+            List<String> currentRoles,
+            List<String> requestedRoles) {
+        UserRoleGrantPolicy.Violation violation =
+                UserRoleGrantPolicy.check(currentRoles, requestedRoles, resource.isSystemAdminActor(actor));
+        if (violation == UserRoleGrantPolicy.Violation.ROLE_NOT_ALLOWED) {
+            throw resource.restError(request, Response.Status.FORBIDDEN, "role_not_allowed",
+                    "指定されたロールは付与できません。");
+        }
+        if (violation != UserRoleGrantPolicy.Violation.NONE) {
+            throw resource.restError(request, Response.Status.FORBIDDEN, "system_admin_privilege_required",
+                    "システム管理者ロールの付与・削除はシステム管理者のみ実行できます。");
+        }
+    }
+
+    private void requireSystemAdminForSystemAdminTarget(
+            AdminAccessResource resource,
+            HttpServletRequest request,
+            String actor,
+            UserModel target) {
+        if (UserRoleGrantPolicy.containsSystemAdminRole(currentRoleNames(target))
+                && !resource.isSystemAdminActor(actor)) {
+            throw resource.restError(request, Response.Status.FORBIDDEN, "system_admin_privilege_required",
+                    "システム管理者ユーザーの変更はシステム管理者のみ実行できます。");
+        }
     }
 
     private void persistRoles(UserModel user, List<String> roles) {

@@ -182,6 +182,27 @@ class StampResourceTest {
                 .satisfies(ex -> assertThat(((WebApplicationException) ex).getResponse().getStatus()).isEqualTo(403));
     }
 
+    @Test
+    void putStampRejectsOverwritingOtherUsersStamp() {
+        when(stampServiceBean.getStamp("victim-stamp")).thenReturn(stamp("victim-stamp", 999L));
+
+        assertThatThrownBy(() -> resource.putStamp("{\"id\":\"victim-stamp\",\"userId\":101}"))
+                .isInstanceOf(WebApplicationException.class)
+                .satisfies(ex -> assertThat(((WebApplicationException) ex).getResponse().getStatus()).isEqualTo(403));
+        verify(stampServiceBean, never()).putStampForActor(org.mockito.ArgumentMatchers.any(StampModel.class),
+                org.mockito.ArgumentMatchers.anyLong());
+    }
+
+    @Test
+    void subscribeTreesRejectsTreeNotVisibleToFacility() {
+        when(stampServiceBean.isPublishedTreeSubscribable(55L, "FAC001")).thenReturn(false);
+
+        assertThatThrownBy(() -> resource.subscribeTrees("{\"list\":[{\"treeId\":55}]}"))
+                .isInstanceOf(WebApplicationException.class)
+                .satisfies(ex -> assertThat(((WebApplicationException) ex).getResponse().getStatus()).isEqualTo(404));
+        verify(stampServiceBean, never()).subscribeTreesForActor(anyList(), org.mockito.ArgumentMatchers.anyLong());
+    }
+
     private static UserModel actorUser() {
         UserModel actor = new UserModel();
         actor.setId(ACTOR_USER_PK);

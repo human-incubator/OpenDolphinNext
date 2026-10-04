@@ -330,6 +330,50 @@ class AdminAccessResourceTest {
                 request);
     }
 
+    @Test
+    void updateUserRejectsSystemAdministratorGrantByFacilityAdmin() {
+        when(request.getRemoteUser()).thenReturn("F001:admin");
+        when(userServiceBean.isAdmin("F001:admin")).thenReturn(true);
+        when(userServiceBean.isSystemAdmin("F001:admin")).thenReturn(false);
+
+        UserModel target = new UserModel();
+        target.setId(10L);
+        target.setUserId("F001:user01");
+        target.setRoles(new ArrayList<>(List.of(role("user"))));
+        when(entityManager.find(UserModel.class, 10L)).thenReturn(target);
+        mockNoOrcaLinkTable();
+
+        try {
+            resource.updateUser(request, 10L, Map.of("roles", List.of("user", "system-administrator")));
+            fail("expected 403");
+        } catch (WebApplicationException ex) {
+            assertEquals(403, ex.getResponse().getStatus());
+        }
+        verify(sessionRevocationService, never()).revokeAllForSecurityStateChange(
+                eq(10L), eq("F001"), anyString(), eq(request));
+    }
+
+    @Test
+    void resetPasswordRejectsSystemAdministratorTargetForFacilityAdmin() {
+        when(request.getRemoteUser()).thenReturn("F001:admin");
+        when(userServiceBean.isAdmin("F001:admin")).thenReturn(true);
+        when(userServiceBean.isSystemAdmin("F001:admin")).thenReturn(false);
+
+        UserModel target = new UserModel();
+        target.setId(11L);
+        target.setUserId("F001:root");
+        target.setRoles(new ArrayList<>(List.of(role("system-administrator"))));
+        when(entityManager.find(UserModel.class, 11L)).thenReturn(target);
+
+        try {
+            resource.resetPassword(request, 11L, Map.of("temporaryPassword", "TempPass#2026"));
+            fail("expected 403");
+        } catch (WebApplicationException ex) {
+            assertEquals(403, ex.getResponse().getStatus());
+        }
+        verify(passwordHashService, never()).hashForStorage(anyString());
+    }
+
     private static void setField(Object target, String name, Object value) throws Exception {
         Class<?> type = target.getClass();
         while (type != null) {

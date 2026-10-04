@@ -47,7 +47,7 @@ final class OrcaOrderBundleMutationFlowSupport {
                         (operation, field, input, required) -> OrcaOrderBundleMutationAuditSupport.requireMutationDate(
                                 resource,
                                 request, facilityId, payload.getPatientId(), runId, operation, field, input, required),
-                        documentId -> OrcaOrderBundleQuerySupport.fetchDocument(karteServiceBean, documentId),
+                        documentId -> fetchDocumentInKarte(karteServiceBean, documentId, context.karte()),
                         new OrcaOrderBundleMutationExecutionSupport.Persistence() {
                             @Override
                             public long addDocument(open.dolphin.infomodel.DocumentModel document) {
@@ -226,5 +226,22 @@ final class OrcaOrderBundleMutationFlowSupport {
             KarteBean karte,
             Long karteId,
             Map<String, Object> orderBundleContext) {
+    }
+
+    /**
+     * 更新・削除対象の文書は検証済みカルテ (= 自施設の当該患者) に属するものに限る。
+     * 他カルテの文書 id は存在しない扱い (null) にする。
+     */
+    private static open.dolphin.infomodel.DocumentModel fetchDocumentInKarte(
+            KarteServiceBean karteServiceBean,
+            long documentId,
+            open.dolphin.infomodel.KarteBean karte) {
+        open.dolphin.infomodel.DocumentModel document =
+                OrcaOrderBundleQuerySupport.fetchDocument(karteServiceBean, documentId);
+        if (document == null || karte == null || document.getKarteBean() == null
+                || document.getKarteBean().getId() != karte.getId()) {
+            return null;
+        }
+        return document;
     }
 }

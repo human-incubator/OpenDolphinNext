@@ -148,6 +148,11 @@ public class KarteDocumentWriteService {
             throw finalizedUpdateDenied(document.getId(), currentStatus, requestedStatus);
         }
 
+        ensureSameKarte(current, document);
+        ensureChildrenBelongToDocument(current.getModules(), document.getModules(), document.getId(), "module");
+        ensureChildrenBelongToDocument(current.getSchema(), document.getSchema(), document.getId(), "schema");
+        ensureChildrenBelongToDocument(current.getAttachment(), document.getAttachment(), document.getId(), "attachment");
+
         removeMissingModules(current.getModules(), document.getModules());
         removeMissingSchemas(current.getSchema(), document.getSchema());
         removeMissingAttachments(current.getAttachment(), document.getAttachment());
@@ -423,6 +428,55 @@ public class KarteDocumentWriteService {
                 Response.Status.CONFLICT,
                 FINALIZED_UPDATE_DENIED_ERROR_CODE,
                 "Finalized document update is denied.",
+                details,
+                null
+        );
+    }
+
+    /**
+     * 既存文書を別のカルテ（患者）へ付け替える更新は受け付けない。
+     */
+    private void ensureSameKarte(DocumentModel current, DocumentModel requested) {
+        long currentKarteId = current.getKarteBean() != null ? current.getKarteBean().getId() : 0L;
+        long requestedKarteId = requested.getKarteBean() != null ? requested.getKarteBean().getId() : 0L;
+        if (requestedKarteId != 0L && requestedKarteId != currentKarteId) {
+            throw scopeMismatch(current.getId(), "karteId", requestedKarteId);
+        }
+    }
+
+    /**
+     * 更新ペイロード中の子要素 (module/schema/attachment) の id は、更新対象文書に既に属するものだけ許可する。
+     * 他文書（他施設を含む）の行 id を混ぜて merge で上書きさせない。
+     */
+    private <T extends KarteEntryBean> void ensureChildrenBelongToDocument(List<T> existing, List<T> incoming,
+            long documentId, String kind) {
+        if (incoming == null || incoming.isEmpty()) {
+            return;
+        }
+        Set<Long> existingIds = new HashSet<>();
+        if (existing != null) {
+            for (T child : existing) {
+                if (child != null && child.getId() > 0) {
+                    existingIds.add(child.getId());
+                }
+            }
+        }
+        for (T child : incoming) {
+            if (child != null && child.getId() > 0 && !existingIds.contains(child.getId())) {
+                throw scopeMismatch(documentId, kind + "Id", child.getId());
+            }
+        }
+    }
+
+    private WebApplicationException scopeMismatch(long documentId, String key, Object value) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("documentId", documentId);
+        details.put(key, value);
+        return AbstractResource.restError(
+                null,
+                Response.Status.FORBIDDEN,
+                "forbidden",
+                "Document update scope mismatch.",
                 details,
                 null
         );

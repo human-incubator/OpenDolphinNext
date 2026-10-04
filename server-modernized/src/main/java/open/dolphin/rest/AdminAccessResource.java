@@ -160,6 +160,10 @@ public class AdminAccessResource extends AbstractResource {
                 .resetPassword(this, request, userPk, payload);
     }
 
+    boolean isSystemAdminActor(String actor) {
+        return actor != null && userServiceBean != null && userServiceBean.isSystemAdmin(actor);
+    }
+
     String requireAdminActor(HttpServletRequest request, String runId) {
         try {
             return AdminResourceSupport.requireAdminActor(this, request, userServiceBean);

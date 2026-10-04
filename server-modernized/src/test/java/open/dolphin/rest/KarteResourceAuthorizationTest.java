@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -63,7 +64,7 @@ class KarteResourceAuthorizationTest {
 
     @BeforeEach
     void setUp() {
-        when(httpServletRequest.getRemoteUser()).thenReturn("FAC_A:user01");
+        lenient().when(httpServletRequest.getRemoteUser()).thenReturn("FAC_A:user01");
     }
 
     @Test
@@ -227,6 +228,79 @@ class KarteResourceAuthorizationTest {
                 .isInstanceOf(WebApplicationException.class)
                 .satisfies(ex -> assertThat(((WebApplicationException) ex).getResponse().getStatus()).isEqualTo(401));
         verify(karteServiceBean, never()).getUserProperties(any());
+    }
+
+    @Test
+    void putObservationsRejectsPersistedObservationFromOtherFacility() {
+        when(karteServiceBean.findFacilityIdByKarteId(501L)).thenReturn("FAC_A");
+        when(karteServiceBean.findFacilityIdByObservationId(77L)).thenReturn("FAC_B");
+
+        assertForbidden(() -> resource.putObservations("""
+                {"list":[{"id":77,"karteBean":{"id":501},"userModel":{"id":999},"observation":"x"}]}
+                """));
+        verify(karteServiceBean, never()).updateObservations(anyList());
+    }
+
+    @Test
+    void postObservationsRequiresKarteAndIgnoresClientCreator() throws Exception {
+        assertThatThrownBy(() -> resource.postObservations("""
+                {"list":[{"observation":"x"}]}
+                """))
+                .isInstanceOf(WebApplicationException.class)
+                .satisfies(ex -> assertThat(((WebApplicationException) ex).getResponse().getStatus()).isEqualTo(400));
+
+        UserModel actor = new UserModel();
+        actor.setId(601L);
+        actor.setUserId("FAC_A:user01");
+        when(userServiceBean.getUser("FAC_A:user01")).thenReturn(actor);
+        when(karteServiceBean.findFacilityIdByKarteId(501L)).thenReturn("FAC_A");
+        when(karteServiceBean.addObservations(anyList())).thenReturn(List.of(1L));
+
+        resource.postObservations("""
+                {"list":[{"karteBean":{"id":501},"userModel":{"id":999},"observation":"x"}]}
+                """);
+
+        org.mockito.ArgumentCaptor<List<open.dolphin.infomodel.ObservationModel>> captor =
+                org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(karteServiceBean).addObservations(captor.capture());
+        assertThat(captor.getValue().get(0).getUserModel().getId()).isEqualTo(601L);
+    }
+
+    @Test
+    void putPatientMemoRejectsPersistedMemoFromOtherFacility() {
+        when(karteServiceBean.findFacilityIdByKarteId(501L)).thenReturn("FAC_A");
+        when(karteServiceBean.findFacilityIdByPatientMemoId(88L)).thenReturn("FAC_B");
+
+        assertForbidden(() -> resource.putPatientMemo("""
+                {"id":88,"karteBean":{"id":501},"memo":"overwrite"}
+                """));
+        verify(karteServiceBean, never()).updatePatientMemo(any());
+    }
+
+    @Test
+    void putPatientMemoRequiresKarte() {
+        assertThatThrownBy(() -> resource.putPatientMemo("""
+                {"id":88,"memo":"overwrite"}
+                """))
+                .isInstanceOf(WebApplicationException.class)
+                .satisfies(ex -> assertThat(((WebApplicationException) ex).getResponse().getStatus()).isEqualTo(400));
+        verify(karteServiceBean, never()).updatePatientMemo(any());
+    }
+
+    @Test
+    void putPatientFreeDocumentIgnoresClientSuppliedId() throws Exception {
+        when(karteServiceBean.getPatientFreeDocument("FAC_A:P001")).thenReturn(null);
+        when(karteServiceBean.updatePatientFreeDocument(any())).thenReturn(1);
+
+        resource.putPatientFreeDocument(httpServletRequest, """
+                {"id": 12345, "facilityPatId": "P001", "comment": "x"}
+                """);
+
+        org.mockito.ArgumentCaptor<PatientFreeDocumentModel> captor =
+                org.mockito.ArgumentCaptor.forClass(PatientFreeDocumentModel.class);
+        verify(karteServiceBean).updatePatientFreeDocument(captor.capture());
+        assertThat(captor.getValue().getId()).isZero();
+        assertThat(captor.getValue().getFacilityPatId()).isEqualTo("FAC_A:P001");
     }
 
     private static void assertForbidden(org.assertj.core.api.ThrowableAssert.ThrowingCallable callable) {

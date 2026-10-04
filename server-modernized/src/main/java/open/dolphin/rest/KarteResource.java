@@ -300,6 +300,7 @@ public class KarteResource extends AbstractResource {
             throw restError(null, Response.Status.BAD_REQUEST, "invalid_request", "observations が必要です。");
         }
         support().ensureObservationFacilityAccess(observations, null);
+        support().applyActorAsCreator(observations, null);
 
         List<Long> result = karteServiceBean.addObservations(observations);
 
@@ -325,7 +326,8 @@ public class KarteResource extends AbstractResource {
             throw restError(null, Response.Status.BAD_REQUEST, "invalid_request", "observations が必要です。");
         }
         support().ensureObservationFacilityAccess(observations, null);
-        
+        support().applyActorAsCreator(observations, null);
+
         int result = karteServiceBean.updateObservations(observations);
 
         String text = String.valueOf(result);
@@ -361,6 +363,7 @@ public class KarteResource extends AbstractResource {
     public String putPatientMemo(String json) throws IOException {
         PatientMemoModel memo = support().readJson(json, PatientMemoModel.class);
         support().ensurePatientMemoFacilityAccess(memo, null);
+        support().applyActorAsCreator(List.of(memo), null);
 
         int result = karteServiceBean.updatePatientMemo(memo);
         String text = String.valueOf(result);
@@ -403,6 +406,8 @@ public class KarteResource extends AbstractResource {
                     "Patient free document was changed by another editor. Reload before saving.");
         }
         model.setFacilityPatId(fpid);
+        // 更新対象の行はセッション施設の患者 (fpid) から決める。クライアント指定の id は使わない。
+        model.setId(current != null ? current.getId() : 0L);
 
         int result = karteServiceBean.updatePatientFreeDocument(model);
         String text = String.valueOf(result);

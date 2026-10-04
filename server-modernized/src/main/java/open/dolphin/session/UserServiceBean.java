@@ -138,6 +138,11 @@ public class UserServiceBean {
 
         // 施設IDからFacilityModelを取得して設定する
         String fid = add.getFacilityModel().getFacilityId();
+        // userId の施設プレフィックスと所属施設が食い違うユーザーは作らない（他施設へのユーザー作成防止）
+        if (fid == null || fid.isBlank() || add.getUserId() == null
+                || !add.getUserId().startsWith(fid + IInfoModel.COMPOSITE_KEY_MAKER)) {
+            throw new IllegalArgumentException("userId facility prefix does not match facility");
+        }
         FacilityModel facility = (FacilityModel) em.createQuery("from FacilityModel f where f.facilityId = :fid")
                                                    .setParameter("fid", fid)
                                                    .getSingleResult();

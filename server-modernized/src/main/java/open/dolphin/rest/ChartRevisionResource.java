@@ -177,8 +177,16 @@ public class ChartRevisionResource extends AbstractOrcaRestResource {
             @PathParam("chartId") long chartId,
             @PathParam("revisionId") long revisionId,
             ChartRevisionFinalizeRequest payload) {
-        requireRemoteUser(request);
+        String actor = requireRemoteUser(request);
         String facilityId = requireFacilityId(request);
+        if (payload != null) {
+            // 確定者はクライアント指定を無視し、セッションのユーザーにする
+            long actorUserId = resolveActorUserId(actor);
+            payload.setFinalizedByUserId(actorUserId);
+            if (payload.getDelegatedByUserId() != null) {
+                payload.setDelegatedByUserId(actorUserId);
+            }
+        }
         return finalizeService.finalizeRevision(chartId, revisionId, facilityId, payload);
     }
 
@@ -191,8 +199,9 @@ public class ChartRevisionResource extends AbstractOrcaRestResource {
             @PathParam("chartId") long chartId,
             @PathParam("revisionId") long revisionId,
             ChartRevisionChangeRequest payload) {
-        requireRemoteUser(request);
+        String actor = requireRemoteUser(request);
         String facilityId = requireFacilityId(request);
+        applyActor(payload, actor);
         return finalizeService.amendRevision(chartId, revisionId, facilityId, payload);
     }
 
@@ -205,8 +214,9 @@ public class ChartRevisionResource extends AbstractOrcaRestResource {
             @PathParam("chartId") long chartId,
             @PathParam("revisionId") long revisionId,
             ChartRevisionChangeRequest payload) {
-        requireRemoteUser(request);
+        String actor = requireRemoteUser(request);
         String facilityId = requireFacilityId(request);
+        applyActor(payload, actor);
         return finalizeService.addAddendum(chartId, revisionId, facilityId, payload);
     }
 
@@ -219,8 +229,9 @@ public class ChartRevisionResource extends AbstractOrcaRestResource {
             @PathParam("chartId") long chartId,
             @PathParam("revisionId") long revisionId,
             ChartRevisionChangeRequest payload) {
-        requireRemoteUser(request);
+        String actor = requireRemoteUser(request);
         String facilityId = requireFacilityId(request);
+        applyActor(payload, actor);
         return finalizeService.cancelRevision(chartId, revisionId, facilityId, payload);
     }
 
@@ -228,6 +239,13 @@ public class ChartRevisionResource extends AbstractOrcaRestResource {
         return Response.ok(pdf.getData(), "application/pdf")
                 .header("Content-Disposition", disposition + "; filename=\"" + pdf.getFileName() + "\"")
                 .build();
+    }
+
+    private void applyActor(ChartRevisionChangeRequest payload, String actor) {
+        if (payload != null) {
+            // 操作者はクライアント指定を無視し、セッションのユーザーにする
+            payload.setActorUserId(resolveActorUserId(actor));
+        }
     }
 
     private long resolveActorUserId(String actor) {

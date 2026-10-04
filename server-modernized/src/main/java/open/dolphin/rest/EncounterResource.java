@@ -49,11 +49,20 @@ public class EncounterResource extends AbstractResource {
             Map<String, Object> payload) {
         requireRemoteUser(request);
         String facilityId = requireActorFacility(request);
+        // 施設はセッションから決める。他施設の facilityId 指定や他施設の encounter は存在しない扱い (404)。
+        String requestedFacilityId = stringValue(payload, "facilityId");
+        if (requestedFacilityId != null && !facilityId.equals(requestedFacilityId)) {
+            throw new NotFoundException();
+        }
+        EncounterProjectionRepository.EncounterRow current = encounterProjectionRepository.findByEncounterKey(encounterKey);
+        if (current == null || !facilityId.equals(current.facilityId())) {
+            throw new NotFoundException();
+        }
         EncounterTransitionService.TransitionResult result;
         try {
             result = encounterTransitionService.transition(new EncounterTransitionService.TransitionCommand(
                     stringValue(payload, "operation"),
-                    stringValue(payload, "facilityId", facilityId),
+                    facilityId,
                     stringValue(payload, "patientId"),
                     longValue(payload.get("karteId")),
                     encounterKey,

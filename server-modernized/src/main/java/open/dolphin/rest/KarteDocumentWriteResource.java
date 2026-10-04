@@ -94,6 +94,7 @@ public class KarteDocumentWriteResource extends AbstractResource {
         DocumentModel document = readJson(json, DocumentModel.class);
         normalizeAttachmentReferencePayload(document, null);
         ensureDocumentPayloadFacility(document, null);
+        applyActorAsCreator(document, null);
         populateDocumentRelations(document);
 
         long result = karteServiceBean.addDocument(document);
@@ -112,6 +113,7 @@ public class KarteDocumentWriteResource extends AbstractResource {
         DocumentModel document = readJson(json, DocumentModel.class);
         normalizeAttachmentReferencePayload(document, null);
         ensureDocumentPayloadFacility(document, null);
+        applyActorAsCreator(document, null);
         populateDocumentRelations(document);
 
         long result = karteServiceBean.updateDocument(document);
@@ -210,14 +212,54 @@ public class KarteDocumentWriteResource extends AbstractResource {
     }
 
     private void ensureDocumentPayloadFacility(DocumentModel document, HttpServletRequest request) {
+        HttpServletRequest effectiveRequest = resolveRequest(request);
         if (document == null) {
-            return;
+            throw AbstractResource.restError(effectiveRequest, Response.Status.BAD_REQUEST, "invalid_request",
+                    "document payload is required.");
+        }
+        // karte 未指定のまま素通りさせない（fail closed）
+        if (document.getKarteBean() == null || document.getKarteBean().getId() <= 0) {
+            throw AbstractResource.restError(effectiveRequest, Response.Status.BAD_REQUEST, "invalid_request",
+                    "document.karteBean.id is required.");
         }
         if (document.getId() > 0) {
-            ensureDocumentFacilityAccess(document.getId(), request);
+            ensureDocumentFacilityAccess(document.getId(), effectiveRequest);
         }
-        if (document.getKarteBean() != null && document.getKarteBean().getId() > 0) {
-            ensureKarteFacilityAccess(document.getKarteBean().getId(), request);
+        ensureKarteFacilityAccess(document.getKarteBean().getId(), effectiveRequest);
+        // 版管理で参照する元文書 (parentPk) / linkId も自施設のものに限る。
+        // parentPk は保存時に MODIFIED へ落とされ、linkId は削除時に連鎖削除されるため。
+        if (document.getDocInfoModel() != null && document.getDocInfoModel().getParentPk() > 0) {
+            ensureDocumentFacilityAccess(document.getDocInfoModel().getParentPk(), effectiveRequest);
+        }
+        if (document.getLinkId() > 0) {
+            ensureDocumentFacilityAccess(document.getLinkId(), effectiveRequest);
+        }
+    }
+
+    /**
+     * 記載者 (creator) はクライアント指定を無視し、セッションのユーザーで上書きする。
+     */
+    private void applyActorAsCreator(DocumentModel document, HttpServletRequest request) {
+        HttpServletRequest effectiveRequest = resolveRequest(request);
+        UserModel actor = resolveActorUser(effectiveRequest);
+        if (actor == null) {
+            throw AbstractResource.restError(effectiveRequest, Response.Status.UNAUTHORIZED, "unauthorized",
+                    "Authenticated user could not be resolved.");
+        }
+        document.setUserModel(actor);
+        applyActorAsCreator(document.getModules(), actor);
+        applyActorAsCreator(document.getSchema(), actor);
+        applyActorAsCreator(document.getAttachment(), actor);
+    }
+
+    private static void applyActorAsCreator(List<? extends open.dolphin.infomodel.KarteEntryBean> entries, UserModel actor) {
+        if (entries == null) {
+            return;
+        }
+        for (open.dolphin.infomodel.KarteEntryBean entry : entries) {
+            if (entry != null) {
+                entry.setUserModel(actor);
+            }
         }
     }
 

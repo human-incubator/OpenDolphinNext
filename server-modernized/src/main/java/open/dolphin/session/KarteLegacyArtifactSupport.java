@@ -52,6 +52,8 @@ final class KarteLegacyArtifactSupport {
             "select r.karte.patient.facilityId from RegisteredDiagnosisModel r where r.id=:id";
     private static final String QUERY_FACILITY_BY_OBSERVATION_ID =
             "select o.karte.patient.facilityId from ObservationModel o where o.id=:id";
+    private static final String QUERY_FACILITY_BY_PATIENT_MEMO_ID =
+            "select m.karte.patient.facilityId from PatientMemoModel m where m.id=:id";
     private static final String QUERY_FACILITY_BY_ONDOBAN_ID =
             "select o.karte.patient.facilityId from OndobanModel o where o.id=:id";
     private static final String QUERY_FACILITY_BY_NURSE_PROGRESS_COURSE_ID =
@@ -141,6 +143,10 @@ final class KarteLegacyArtifactSupport {
 
     String findFacilityIdByObservationId(long observationId) {
         return findFacilityIdById(QUERY_FACILITY_BY_OBSERVATION_ID, observationId);
+    }
+
+    String findFacilityIdByPatientMemoId(long patientMemoId) {
+        return findFacilityIdById(QUERY_FACILITY_BY_PATIENT_MEMO_ID, patientMemoId);
     }
 
     String findFacilityIdByOndobanId(long ondobanId) {

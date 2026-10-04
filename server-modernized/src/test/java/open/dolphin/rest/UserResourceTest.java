@@ -351,6 +351,141 @@ class UserResourceTest extends RuntimeDelegateTestSupport {
         verify(userServiceBean, never()).updateUser(any());
     }
 
+    @Test
+    void adminCannotCreateUserInOtherFacility() throws Exception {
+        when(request.getRemoteUser()).thenReturn(ADMIN);
+        when(userServiceBean.isAdmin(ADMIN)).thenReturn(true);
+
+        String payload = """
+                {
+                  "userId":"F999:evil",
+                  "commonName":"Evil",
+                  "roles":[{"role":"user"}]
+                }
+                """;
+
+        assertThatThrownBy(() -> resource.postUser(request, payload))
+                .isInstanceOf(WebApplicationException.class)
+                .satisfies(ex -> assertThat(((WebApplicationException) ex).getResponse().getStatus()).isEqualTo(403));
+        verify(userServiceBean, never()).addUser(any());
+    }
+
+    @Test
+    void adminCannotGrantSystemAdministratorOnCreate() throws Exception {
+        when(request.getRemoteUser()).thenReturn(ADMIN);
+        when(userServiceBean.isAdmin(ADMIN)).thenReturn(true);
+        when(userServiceBean.isSystemAdmin(ADMIN)).thenReturn(false);
+
+        String payload = """
+                {
+                  "userId":"F001:user03",
+                  "commonName":"New User",
+                  "roles":[{"role":"user"},{"role":"system-administrator"}]
+                }
+                """;
+
+        assertThatThrownBy(() -> resource.postUser(request, payload))
+                .isInstanceOf(WebApplicationException.class)
+                .satisfies(ex -> assertThat(((WebApplicationException) ex).getResponse().getStatus()).isEqualTo(403));
+        verify(userServiceBean, never()).addUser(any());
+    }
+
+    @Test
+    void adminCannotGrantUnknownRole() throws Exception {
+        when(request.getRemoteUser()).thenReturn(ADMIN);
+        when(userServiceBean.isAdmin(ADMIN)).thenReturn(true);
+
+        String payload = """
+                {
+                  "userId":"F001:user03",
+                  "commonName":"New User",
+                  "roles":[{"role":"superuser"}]
+                }
+                """;
+
+        assertThatThrownBy(() -> resource.postUser(request, payload))
+                .isInstanceOf(WebApplicationException.class)
+                .satisfies(ex -> assertThat(((WebApplicationException) ex).getResponse().getStatus()).isEqualTo(403));
+        verify(userServiceBean, never()).addUser(any());
+    }
+
+    @Test
+    void adminCreatesUserInOwnFacilityWithFacilityFromSession() throws Exception {
+        when(request.getRemoteUser()).thenReturn(ADMIN);
+        when(userServiceBean.isAdmin(ADMIN)).thenReturn(true);
+        when(userServiceBean.addUser(any(UserModel.class))).thenReturn(1);
+
+        String payload = """
+                {
+                  "userId":"user03",
+                  "commonName":"New User",
+                  "facilityModel":{"id":99,"facilityId":"F999"},
+                  "roles":[{"role":"user"},{"role":"doctor"}]
+                }
+                """;
+
+        assertThat(resource.postUser(request, payload)).isEqualTo("1");
+        ArgumentCaptor<UserModel> captor = ArgumentCaptor.forClass(UserModel.class);
+        verify(userServiceBean).addUser(captor.capture());
+        assertThat(captor.getValue().getUserId()).isEqualTo("F001:user03");
+        assertThat(captor.getValue().getFacilityModel().getFacilityId()).isEqualTo("F001");
+        assertThat(captor.getValue().getFacilityModel().getId()).isZero();
+    }
+
+    @Test
+    void systemAdminCanGrantSystemAdministratorInOwnFacility() throws Exception {
+        String sysAdmin = "F001:root";
+        when(request.getRemoteUser()).thenReturn(sysAdmin);
+        when(userServiceBean.isAdmin(sysAdmin)).thenReturn(true);
+        when(userServiceBean.isSystemAdmin(sysAdmin)).thenReturn(true);
+        when(userServiceBean.addUser(any(UserModel.class))).thenReturn(1);
+
+        String payload = """
+                {
+                  "userId":"F001:root2",
+                  "commonName":"Root Two",
+                  "roles":[{"role":"system-administrator"}]
+                }
+                """;
+
+        assertThat(resource.postUser(request, payload)).isEqualTo("1");
+    }
+
+    @Test
+    void adminCannotPromoteUserToSystemAdministratorOnUpdate() throws Exception {
+        when(request.getRemoteUser()).thenReturn(ADMIN);
+        when(userServiceBean.isAdmin(ADMIN)).thenReturn(true);
+        when(userServiceBean.isSystemAdmin(ADMIN)).thenReturn(false);
+        when(userServiceBean.getUserByPk(2L)).thenReturn(userWithRole(USER_02, "F001", 2L, "user"));
+
+        String payload = """
+                {
+                  "id":2,
+                  "userId":"F001:user02",
+                  "commonName":"Managed User",
+                  "roles":[{"role":"user"},{"role":"system_admin"}]
+                }
+                """;
+
+        assertThatThrownBy(() -> resource.putUser(request, payload))
+                .isInstanceOf(WebApplicationException.class)
+                .satisfies(ex -> assertThat(((WebApplicationException) ex).getResponse().getStatus()).isEqualTo(403));
+        verify(userServiceBean, never()).updateUser(any());
+    }
+
+    @Test
+    void adminCannotDeleteSystemAdministrator() {
+        when(request.getRemoteUser()).thenReturn(ADMIN);
+        when(userServiceBean.isAdmin(ADMIN)).thenReturn(true);
+        when(userServiceBean.isSystemAdmin(ADMIN)).thenReturn(false);
+        when(userServiceBean.getUser(USER_02)).thenReturn(userWithRole(USER_02, "F001", 2L, "system-administrator"));
+
+        assertThatThrownBy(() -> resource.deleteUser(request, USER_02))
+                .isInstanceOf(WebApplicationException.class)
+                .satisfies(ex -> assertThat(((WebApplicationException) ex).getResponse().getStatus()).isEqualTo(403));
+        verify(userServiceBean, never()).removeUser(any());
+    }
+
     private static RoleModel role(String value) {
         RoleModel role = new RoleModel();
         role.setRole(value);

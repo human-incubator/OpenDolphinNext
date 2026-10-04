@@ -224,6 +224,10 @@ public class KarteServiceBean {
         return legacyArtifactSupport().findFacilityIdByObservationId(observationId);
     }
 
+    public String findFacilityIdByPatientMemoId(long patientMemoId) {
+        return legacyArtifactSupport().findFacilityIdByPatientMemoId(patientMemoId);
+    }
+
     public String findFacilityIdByOndobanId(long ondobanId) {
         return legacyArtifactSupport().findFacilityIdByOndobanId(ondobanId);
     }

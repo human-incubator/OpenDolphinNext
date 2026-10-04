@@ -20,11 +20,13 @@ import open.dolphin.converter.KarteBeanConverter;
 import open.dolphin.infomodel.DocumentModel;
 import open.dolphin.infomodel.IInfoModel;
 import open.dolphin.infomodel.KarteBean;
+import open.dolphin.infomodel.KarteEntryBean;
 import open.dolphin.infomodel.ModuleModel;
 import open.dolphin.infomodel.ObservationModel;
 import open.dolphin.infomodel.PatientFreeDocumentModel;
 import open.dolphin.infomodel.PatientMemoModel;
 import open.dolphin.infomodel.RegisteredDiagnosisModel;
+import open.dolphin.infomodel.UserModel;
 import open.dolphin.rest.dto.KarteRevisionDocumentResponse;
 import open.dolphin.rest.dto.LegacyKarteListResponse;
 import open.dolphin.rest.support.KarteRevisionResponseMapper;
@@ -286,16 +288,31 @@ final class KarteResourceSupport {
     }
 
     void ensureObservationFacilityAccess(List<ObservationModel> observations, HttpServletRequest request) {
+        HttpServletRequest effectiveRequest = resolveRequest(request);
         Set<Long> karteIds = new LinkedHashSet<>();
+        Set<Long> observationIds = new LinkedHashSet<>();
         if (observations != null) {
             for (ObservationModel observation : observations) {
-                if (observation != null && observation.getKarteBean() != null && observation.getKarteBean().getId() > 0) {
-                    karteIds.add(observation.getKarteBean().getId());
+                if (observation == null) {
+                    continue;
+                }
+                // karte 未指定のまま素通りさせない（fail closed）
+                if (observation.getKarteBean() == null || observation.getKarteBean().getId() <= 0) {
+                    throw AbstractResource.restError(effectiveRequest, Response.Status.BAD_REQUEST, "invalid_request",
+                            "observation.karteBean.id is required.");
+                }
+                karteIds.add(observation.getKarteBean().getId());
+                if (observation.getId() > 0) {
+                    observationIds.add(observation.getId());
                 }
             }
         }
         for (Long karteId : karteIds) {
-            ensureKarteFacilityAccess(karteId, request);
+            ensureKarteFacilityAccess(karteId, effectiveRequest);
+        }
+        // 既存行の上書き (merge) は永続化済みの行の施設で判定する
+        for (Long observationId : observationIds) {
+            ensureObservationFacilityAccess(observationId, effectiveRequest);
         }
     }
 
@@ -308,9 +325,50 @@ final class KarteResourceSupport {
     }
 
     void ensurePatientMemoFacilityAccess(PatientMemoModel memo, HttpServletRequest request) {
-        if (memo != null && memo.getKarteBean() != null && memo.getKarteBean().getId() > 0) {
-            ensureKarteFacilityAccess(memo.getKarteBean().getId(), request);
+        HttpServletRequest effectiveRequest = resolveRequest(request);
+        if (memo == null || memo.getKarteBean() == null || memo.getKarteBean().getId() <= 0) {
+            throw AbstractResource.restError(effectiveRequest, Response.Status.BAD_REQUEST, "invalid_request",
+                    "memo.karteBean.id is required.");
         }
+        ensureKarteFacilityAccess(memo.getKarteBean().getId(), effectiveRequest);
+        if (memo.getId() > 0) {
+            ensureFacilityMatch(requireActorFacilityId(effectiveRequest),
+                    karteServiceBean.findFacilityIdByPatientMemoId(memo.getId()), "patientMemoId", memo.getId(),
+                    effectiveRequest);
+        }
+    }
+
+    /**
+     * 記載者 (creator) はクライアント指定を無視し、セッションのユーザーで上書きする。
+     */
+    void applyActorAsCreator(List<? extends KarteEntryBean> entries, HttpServletRequest request) {
+        if (entries == null || entries.isEmpty()) {
+            return;
+        }
+        UserModel actor = requireActorUser(request);
+        for (KarteEntryBean entry : entries) {
+            if (entry != null) {
+                entry.setUserModel(actor);
+            }
+        }
+    }
+
+    UserModel requireActorUser(HttpServletRequest request) {
+        HttpServletRequest effectiveRequest = resolveRequest(request);
+        String remoteUser = effectiveRequest != null ? effectiveRequest.getRemoteUser() : null;
+        UserModel actor = null;
+        if (remoteUser != null && !remoteUser.isBlank() && userServiceBean != null) {
+            try {
+                actor = userServiceBean.getUser(remoteUser);
+            } catch (RuntimeException ex) {
+                actor = null;
+            }
+        }
+        if (actor == null) {
+            throw AbstractResource.restError(effectiveRequest, Response.Status.UNAUTHORIZED, "unauthorized",
+                    "Authenticated user could not be resolved.");
+        }
+        return actor;
     }
 
     <T> T readJson(String json, Class<T> type) throws IOException {

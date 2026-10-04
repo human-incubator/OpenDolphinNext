@@ -103,18 +103,25 @@ public class UserResource extends AbstractResource {
         debug(fid);
 
         UserModel model = UserMutationRequestMapper.toModel(requestPayload);
-
-        if (model.getFacilityModel() == null) {
-            open.dolphin.infomodel.FacilityModel facilityModel = new open.dolphin.infomodel.FacilityModel();
-            model.setFacilityModel(facilityModel);
+        if (model == null) {
+            throw restError(req, Response.Status.BAD_REQUEST, "invalid_request", "user payload is required.");
         }
-        model.getFacilityModel().setFacilityId(fid);
+        // 施設はセッションから決める。userId の施設プレフィックスが自施設と異なる場合は拒否する。
+        model.setUserId(resolveNewUserId(req, fid, model.getUserId()));
+        ensureRolesGrantable(req, remoteUser, null, model.getRoles());
+
+        // クライアント指定の facility (id 含む) は使わない
+        FacilityModel facilityModel = new FacilityModel();
+        facilityModel.setFacilityId(fid);
+        model.setFacilityModel(facilityModel);
 
         // 関係を構築する
         List<RoleModel> roles = model.getRoles();
-        for (RoleModel role : roles) {
-            role.setUserModel(model);
-            role.setUserId(model.getUserId());
+        if (roles != null) {
+            for (RoleModel role : roles) {
+                role.setUserModel(model);
+                role.setUserId(model.getUserId());
+            }
         }
 
         int result = userServiceBean.addUser(model);
@@ -143,7 +150,9 @@ public class UserResource extends AbstractResource {
         ensureFacilityMatchOr404(actorFacility, facilityIdOf(current), "userPk", current.getId(), req);
 
         boolean admin = userServiceBean.isAdmin(remoteUser);
-        if (!admin) {
+        if (admin) {
+            ensureRolesGrantable(req, remoteUser, current.getRoles(), model.getRoles());
+        } else {
             if (!remoteUser.equals(current.getUserId())) {
                 Logger.getLogger("open.dolphin").log(Level.WARNING, "User ID is different:{0},{1}",
                         new Object[]{remoteUser, current.getUserId()});
@@ -185,6 +194,13 @@ public class UserResource extends AbstractResource {
             throw userNotFound(req, userId);
         }
         ensureFacilityMatchOr404(actorFacility, facilityIdOf(target), "userId", userId, req);
+        if (UserRoleGrantPolicy.containsSystemAdminRole(roleNames(target.getRoles()))
+                && !userServiceBean.isSystemAdmin(req.getRemoteUser())) {
+            Logger.getLogger("open.dolphin").log(Level.WARNING, "Denied deleting system administrator by actor={0}",
+                    new Object[]{req.getRemoteUser()});
+            throw restError(req, Response.Status.FORBIDDEN, "forbidden",
+                    "Deleting a system administrator requires system administrator privilege.");
+        }
 
         int result = userServiceBean.removeUser(target.getUserId());
 
@@ -322,6 +338,59 @@ public class UserResource extends AbstractResource {
         }
         return restError(request, Response.Status.NOT_FOUND, "not_found", "Requested resource was not found.",
                 details.isEmpty() ? null : details, null);
+    }
+
+    private String resolveNewUserId(HttpServletRequest request, String actorFacility, String requestedUserId) {
+        if (actorFacility == null || actorFacility.isBlank()) {
+            throw restError(request, Response.Status.UNAUTHORIZED, "facility_missing",
+                    "Facility identifier is required for this operation.");
+        }
+        String normalized = requestedUserId != null ? requestedUserId.trim() : "";
+        int separator = normalized.indexOf(IInfoModel.COMPOSITE_KEY_MAKER);
+        String localPart = normalized;
+        if (separator >= 0) {
+            String requestedFacility = normalized.substring(0, separator).trim();
+            if (!actorFacility.equals(requestedFacility)) {
+                Logger.getLogger("open.dolphin").log(Level.WARNING,
+                        "Denied cross-facility user creation: actorFacility={0}, requestedFacility={1}",
+                        new Object[]{actorFacility, requestedFacility});
+                throw restError(request, Response.Status.FORBIDDEN, "forbidden",
+                        "Users can be created only in your own facility.");
+            }
+            localPart = normalized.substring(separator + 1).trim();
+        }
+        if (localPart.isEmpty() || localPart.contains(IInfoModel.COMPOSITE_KEY_MAKER)) {
+            throw restError(request, Response.Status.BAD_REQUEST, "invalid_request", "userId is invalid.");
+        }
+        return actorFacility + IInfoModel.COMPOSITE_KEY_MAKER + localPart;
+    }
+
+    private void ensureRolesGrantable(HttpServletRequest request, String actor,
+            List<RoleModel> currentRoles, List<RoleModel> requestedRoles) {
+        boolean systemAdmin = userServiceBean.isSystemAdmin(actor);
+        UserRoleGrantPolicy.Violation violation =
+                UserRoleGrantPolicy.check(roleNames(currentRoles), roleNames(requestedRoles), systemAdmin);
+        if (violation == UserRoleGrantPolicy.Violation.NONE) {
+            return;
+        }
+        Logger.getLogger("open.dolphin").log(Level.WARNING, "Denied role grant ({0}) by actor={1}",
+                new Object[]{violation, actor});
+        if (violation == UserRoleGrantPolicy.Violation.ROLE_NOT_ALLOWED) {
+            throw restError(request, Response.Status.FORBIDDEN, "role_not_allowed", "Requested role is not grantable.");
+        }
+        throw restError(request, Response.Status.FORBIDDEN, "forbidden",
+                "System administrator role can be changed only by a system administrator.");
+    }
+
+    private static List<String> roleNames(List<RoleModel> roles) {
+        if (roles == null) {
+            return List.of();
+        }
+        return roles.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(RoleModel::getRole)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toList());
     }
 
     private boolean hasRoleChange(List<RoleModel> currentRoles, List<RoleModel> requestedRoles) {

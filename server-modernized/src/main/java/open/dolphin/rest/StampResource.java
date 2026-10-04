@@ -228,6 +228,12 @@ public class StampResource extends AbstractResource {
         if (trees == null) {
             throw restError(null, Response.Status.BAD_REQUEST, "invalid_request", "subscribed trees が必要です。");
         }
+        String actorFacility = getRemoteFacility(httpServletRequest != null ? httpServletRequest.getRemoteUser() : null);
+        for (SubscribedTreeModel tree : trees) {
+            if (tree != null && !stampServiceBean.isPublishedTreeSubscribable(tree.getTreeId(), actorFacility)) {
+                throw restError(httpServletRequest, Response.Status.NOT_FOUND, "not_found", "Requested resource was not found.");
+            }
+        }
         support().applyActorToSubscribedTrees(trees, actorUser);
         
         List<Long> result = stampServiceBean.subscribeTreesForActor(trees, actorUser.getId());
@@ -305,6 +311,10 @@ public class StampResource extends AbstractResource {
 
         StampModel model = readJson(json, StampModel.class);
         long actorUserPk = support().resolveActorUserPk();
+        // 既存スタンプの上書き (merge) は所有者本人に限る
+        if (model != null && model.getId() != null && !model.getId().isBlank()) {
+            support().ensureStampOwnership(stampServiceBean.getStamp(model.getId()), actorUserPk, model.getId());
+        }
         support().applyActorToStamp(model, actorUserPk);
 
         String ret = stampServiceBean.putStampForActor(model, actorUserPk);

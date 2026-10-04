@@ -100,16 +100,33 @@ final class StampResourceSupport {
         if (holder == null || actorUser == null) {
             return;
         }
+        String actorFacility = AbstractResource.getRemoteFacility(resolveRemoteUser());
         StampTreeModel personal = holder.getPersonalTree();
         if (personal != null) {
+            ensurePublishTypeAllowed(personal.getPublishType(), actorFacility);
             applyActorToTree(personal, actorUser);
         }
         if (holder.getSubscribedList() != null) {
             for (IStampTreeModel tree : holder.getSubscribedList()) {
                 if (tree instanceof PublishedTreeModel published) {
+                    ensurePublishTypeAllowed(published.getPublishType(), actorFacility);
                     published.setUserModel(actorUser);
                 }
             }
+        }
+    }
+
+    /**
+     * 公開先 (publishType) は "global" か自施設 ID のみ。他施設の院内公開リストへ載せさせない。
+     */
+    private void ensurePublishTypeAllowed(String publishType, String actorFacility) {
+        if (publishType == null || publishType.isBlank()
+                || IInfoModel.PUBLISHED_TYPE_GLOBAL.equals(publishType.trim())) {
+            return;
+        }
+        if (actorFacility == null || !actorFacility.equals(publishType.trim())) {
+            throw resource.restError(request, Response.Status.FORBIDDEN, "forbidden", "Access denied",
+                    Map.of("publishType", publishType), null);
         }
     }
 

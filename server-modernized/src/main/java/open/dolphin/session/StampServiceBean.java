@@ -383,6 +383,18 @@ public class StampServiceBean {
         return ret;
     }
 
+    /**
+     * 公開ツリーが指定施設から購読可能か (global か、その施設の院内公開)。
+     */
+    public boolean isPublishedTreeSubscribable(long treeId, String facilityId) {
+        PublishedTreeModel published = em.find(PublishedTreeModel.class, treeId);
+        if (published == null || published.getPublishType() == null) {
+            return false;
+        }
+        String type = published.getPublishType().trim();
+        return IInfoModel.PUBLISHED_TYPE_GLOBAL.equals(type) || (facilityId != null && facilityId.equals(type));
+    }
+
     public List<Long> subscribeTreesForActor(List<SubscribedTreeModel> addList, long actorUserPk) {
         if (actorUserPk <= 0) {
             throw new IllegalArgumentException("actorUserPk is required");
