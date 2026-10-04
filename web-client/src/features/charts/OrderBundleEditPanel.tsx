@@ -3728,7 +3728,8 @@ export function OrderBundleEditPanel({
       });
       return;
     }
-    const normalizedForm = applyBundleNameCorrection(form);
+    // Fill the entity's default classCode at save time too (new bundles can reach here with an empty classCode).
+    const normalizedForm = applyDefaultClassMeta(entity, applyBundleNameCorrection(form));
     if (normalizedForm !== form) {
       setForm(normalizedForm);
     }
