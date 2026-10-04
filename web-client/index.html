@@ -108,21 +108,6 @@
         <p class="boot-loader__label">Loading OpenDolphin...</p>
       </div>
     </div>
-    <script>
-      (function loadWebVitalsWhenRequested() {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('perf') !== '1') return;
-
-        // MSW の有効/無効を RUM へ伝搬させる
-        window.__MSW_ENABLED__ = params.get('msw') !== '0';
-        window.__PERF_ENDPOINT__ = `${window.location.origin}%BASE_URL%__perf-log`;
-
-        const script = document.createElement('script');
-        script.type = 'module';
-        script.src = '%BASE_URL%web-vitals-rum.js';
-        document.head.appendChild(script);
-      })();
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

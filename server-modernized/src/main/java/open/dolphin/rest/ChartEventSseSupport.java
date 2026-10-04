@@ -6,6 +6,9 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import jakarta.annotation.Resource;
+import jakarta.enterprise.concurrent.ManagedScheduledExecutorService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.MediaType;
@@ -22,6 +25,10 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
@@ -69,10 +76,77 @@ public class ChartEventSseSupport implements ChartEventStreamPublisher {
             ChartEventHistorySettingsResolver.DEFAULT_RETENTION_COUNT,
             ChartEventHistorySettingsResolver.DEFAULT_RETENTION_DURATION);
 
+    /**
+     * Idle SSE streams are cut by proxies/CDNs (CloudFront closes an origin response after 30s without bytes),
+     * so send a comment-only keep-alive like ReceptionRealtimeSseSupport does.
+     */
+    private static final long KEEP_ALIVE_INTERVAL_SECONDS = 20L;
+
+    @Resource(lookup = "java:jboss/ee/concurrency/scheduler/default")
+    private ManagedScheduledExecutorService managedKeepAliveScheduler;
+
+    private ScheduledExecutorService keepAliveScheduler;
+    private ScheduledFuture<?> keepAliveTask;
+    private volatile boolean ownsKeepAliveScheduler;
+
     @PostConstruct
     void initialize() {
         historySettings = ChartEventHistorySettingsResolver.load();
         initializeSequenceFromHistory();
+        startKeepAlive();
+    }
+
+    @PreDestroy
+    void shutdown() {
+        if (keepAliveTask != null) {
+            keepAliveTask.cancel(true);
+            keepAliveTask = null;
+        }
+        if (keepAliveScheduler != null && ownsKeepAliveScheduler) {
+            keepAliveScheduler.shutdownNow();
+        }
+        keepAliveScheduler = null;
+        ownsKeepAliveScheduler = false;
+    }
+
+    private void startKeepAlive() {
+        if (keepAliveTask != null) {
+            return;
+        }
+        if (managedKeepAliveScheduler != null) {
+            keepAliveScheduler = managedKeepAliveScheduler;
+            ownsKeepAliveScheduler = false;
+        } else {
+            keepAliveScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "chart-event-sse-keepalive");
+                thread.setDaemon(true);
+                return thread;
+            });
+            ownsKeepAliveScheduler = true;
+        }
+        keepAliveTask = keepAliveScheduler.scheduleAtFixedRate(this::broadcastKeepAlive, KEEP_ALIVE_INTERVAL_SECONDS,
+                KEEP_ALIVE_INTERVAL_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private void broadcastKeepAlive() {
+        try {
+            facilityContexts.forEach((facilityId, context) -> {
+                for (SseClient client : context.clients) {
+                    if (client.sink.isClosed()) {
+                        removeClient(facilityId, context, client.sink);
+                        continue;
+                    }
+                    OutboundSseEvent event = client.sse.newEventBuilder().comment("keep-alive").build();
+                    client.sink.send(event).whenComplete((ignored, throwable) -> {
+                        if (throwable != null) {
+                            removeClient(facilityId, context, client.sink);
+                        }
+                    });
+                }
+            });
+        } catch (RuntimeException ex) {
+            LOGGER.log(Level.FINE, "Failed to broadcast chart-event keep-alive", ex);
+        }
     }
 
     @Inject
