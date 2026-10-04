@@ -1743,8 +1743,10 @@ export function OrderBundleEditPanel({
   }, [entity, form.bodyPart]);
 
   useEffect(() => {
+    // Re-apply when the form is rebuilt with an empty classCode (e.g. "+処置" new bundle), not only on entity change.
+    // applyDefaultClassMeta returns the same object when classCode is already set, so this does not loop.
     setForm((prev) => applyDefaultClassMeta(entity, prev));
-  }, [entity]);
+  }, [entity, form.classCode]);
 
   const supportsUsageSearch = orderUiProfile.supportsUsageSearch;
   const supportsBodyPartSearch = supportsOrcaBodyPartField(entity, form.classCode);
