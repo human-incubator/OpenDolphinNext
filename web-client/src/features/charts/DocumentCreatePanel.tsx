@@ -319,7 +319,7 @@ const resolveMissingFields = (type: DocumentType, form: DocumentFormState): stri
   return required
     .filter((field) => {
       const value = (payload as Record<string, string>)[field.key];
-      return !value || value.trim().length === 0;
+      return value === null || value === undefined || String(value).trim().length === 0;
     })
     .map((field) => field.label);
 };
@@ -327,9 +327,13 @@ const resolveMissingFields = (type: DocumentType, form: DocumentFormState): stri
 const formatLocalDateYmd = (date: Date): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
-const resolveDateOnlyText = (value?: string): string | undefined => {
-  if (!value) return undefined;
-  const trimmed = value.trim();
+const resolveDateOnlyText = (value?: string | number | null): string | undefined => {
+  if (value === null || value === undefined || value === '') return undefined;
+  // The server returns letter dates as epoch milliseconds (number), not strings.
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? formatLocalDateYmd(new Date(value)) : undefined;
+  }
+  const trimmed = String(value).trim();
   if (!trimmed) return undefined;
   const asDateOnly = /^(\d{4}-\d{2}-\d{2})$/.exec(trimmed);
   if (asDateOnly) return asDateOnly[1];

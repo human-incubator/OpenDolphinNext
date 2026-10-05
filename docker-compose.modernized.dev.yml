@@ -10,7 +10,7 @@ services:
       POSTGRES_INITDB_ARGS: ${MODERNIZED_POSTGRES_INITDB_ARGS:---auth-host=md5 --auth-local=trust}
       TZ: Asia/Tokyo
     ports:
-      - "${MODERNIZED_POSTGRES_PORT:-55432}:5432"
+      - "127.0.0.1:${MODERNIZED_POSTGRES_PORT:-55432}:5432"
     volumes:
       - postgres-data-modernized:/var/lib/postgresql/data
     healthcheck:
@@ -101,8 +101,8 @@ services:
       OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-none}
       TZ: Asia/Tokyo
     ports:
-      - "${MODERNIZED_APP_HTTP_PORT:-9080}:8080"
-      - "${MODERNIZED_APP_ADMIN_PORT:-9995}:9990"
+      - "127.0.0.1:${MODERNIZED_APP_HTTP_PORT:-9080}:8080"
+      - "127.0.0.1:${MODERNIZED_APP_ADMIN_PORT:-9995}:9990"
     volumes:
       - ${MODERNIZED_CUSTOM_PROPERTIES_FILE:-./custom.properties.dev}:/opt/jboss/wildfly/custom.properties:ro
       - ./ops/modernized-server/config/attachment-storage.dev.yaml:/opt/jboss/config/attachment-storage.yaml:ro
@@ -112,7 +112,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "/opt/jboss/healthcheck-session.sh"
+          "curl -fsS http://localhost:8080/openDolphin/api/health >/dev/null"
         ]
       interval: 30s
       timeout: 10s

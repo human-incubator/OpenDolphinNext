@@ -1196,7 +1196,29 @@ apply_baseline_seed() {
     log "Warning: d_facility table not found; skipping baseline seed. Initialize DB schema first."
     return
   fi
-  docker cp "$LOCAL_SEED_FILE" "${POSTGRES_CONTAINER_NAME}":/tmp/modern_seed.sql
+  local seed_source="$LOCAL_SEED_FILE"
+  if [[ -n "${DEV_SMOKE_USER_PASSWORD_HASH:-}" ]]; then
+    # Non-dev deployments: never (re)apply the published default passwords from the seed.
+    # doctor1 gets the operator-provided hash; the seeded system administrator gets a random, unusable hash.
+    local default_smoke_hash='pbkdf2_sha256_v1$310000$Iy73ehQDQ6j1pqxP7fpnpw==$NQj7UL55NKB2QY+ojvhHxV+Cyr98koplDjaFo3ymyiE='
+    local default_sysad_hash='pbkdf2_sha256_v1$310000$wn5EZg2aeNkwpOzacq3GsA==$BMkAAUXhip2eiMrBL/iHAeDZ1YxSgRJij80s6yEf8IE='
+    local random_sysad_hash
+    random_sysad_hash="pbkdf2_sha256_v1\$310000\$$(openssl rand -base64 16)\$$(openssl rand -base64 32)"
+    random_sysad_hash="${random_sysad_hash//\\/}"
+    local seed_content
+    seed_content="$(cat "$LOCAL_SEED_FILE")"
+    # Replacement strings stay unquoted: bash 3.2 keeps quotes in the replacement literally.
+    local smoke_hash="$DEV_SMOKE_USER_PASSWORD_HASH"
+    seed_content="${seed_content//"$default_smoke_hash"/$smoke_hash}"
+    seed_content="${seed_content//"$default_sysad_hash"/$random_sysad_hash}"
+    seed_source="$(mktemp)"
+    printf '%s\n' "$seed_content" > "$seed_source"
+    log "Baseline seed: default smoke/sysadmin password hashes replaced (DEV_SMOKE_USER_PASSWORD_HASH is set)."
+  fi
+  docker cp "$seed_source" "${POSTGRES_CONTAINER_NAME}":/tmp/modern_seed.sql
+  if [[ "$seed_source" != "$LOCAL_SEED_FILE" ]]; then
+    rm -f "$seed_source"
+  fi
   docker exec "${POSTGRES_CONTAINER_NAME}" psql -U opendolphin -d opendolphin_modern -v ON_ERROR_STOP=1 -f /tmp/modern_seed.sql
   log "Baseline seed applied."
 }

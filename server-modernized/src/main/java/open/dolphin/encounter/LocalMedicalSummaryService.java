@@ -502,7 +502,7 @@ public class LocalMedicalSummaryService {
         }
 
         public Map<String, Object> details() {
-            return Map.copyOf(details);
+            return details;
         }
     }
 

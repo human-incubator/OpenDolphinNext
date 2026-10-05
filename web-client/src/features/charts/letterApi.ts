@@ -164,7 +164,7 @@ export async function fetchKarteIdByPatientId({
 
 export async function fetchLetterList({ karteId }: { karteId: number }): Promise<LetterListResult> {
   const runId = ensureRunId();
-  const endpoint = `/odletter/list/${encodeURIComponent(String(karteId))}`;
+  const endpoint = `/api/odletter/list/${encodeURIComponent(String(karteId))}`;
   const response = await httpFetch(endpoint);
   const json = (await parseJson(response)) as Record<string, unknown>;
   const list = Array.isArray(json.list) ? (json.list as LetterModulePayload[]) : [];
@@ -182,7 +182,7 @@ export async function fetchLetterList({ karteId }: { karteId: number }): Promise
 
 export async function fetchLetterDetail({ letterId }: { letterId: number }): Promise<LetterDetailResult> {
   const runId = ensureRunId();
-  const endpoint = `/odletter/letter/${encodeURIComponent(String(letterId))}`;
+  const endpoint = `/api/odletter/letter/${encodeURIComponent(String(letterId))}`;
   const response = await httpFetch(endpoint);
   const json = (await parseJson(response)) as Record<string, unknown>;
   return {
@@ -199,7 +199,7 @@ export async function fetchLetterDetail({ letterId }: { letterId: number }): Pro
 
 export async function saveLetterModule({ payload }: { payload: LetterModulePayload }): Promise<LetterSaveResult> {
   const runId = ensureRunId();
-  const endpoint = '/odletter/letter';
+  const endpoint = '/api/odletter/letter';
   const response = await httpFetch(endpoint, {
     method: 'PUT',
     headers: {
@@ -230,7 +230,7 @@ export async function saveLetterModule({ payload }: { payload: LetterModulePaylo
 
 export async function deleteLetter({ letterId }: { letterId: number }): Promise<ApiResultBase> {
   const runId = ensureRunId();
-  const endpoint = `/odletter/letter/${encodeURIComponent(String(letterId))}`;
+  const endpoint = `/api/odletter/letter/${encodeURIComponent(String(letterId))}`;
   const response = await httpFetch(endpoint, { method: 'DELETE' });
   let error: string | undefined;
   if (!response.ok) {

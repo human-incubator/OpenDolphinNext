@@ -270,7 +270,7 @@ class PrescriptionAuthorityRepository {
                                      standard_name, dosage_form, usage_code, usage_name, dose_value, dose_unit, days,
                                      prescription_location, medication_route, generic_name_prescription,
                                      doctor_comment, unresolved_reason, item_json, created_by)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?)
                                 """)
                         .setParameter(1, revisionId)
                         .setParameter(2, row.itemSequence())

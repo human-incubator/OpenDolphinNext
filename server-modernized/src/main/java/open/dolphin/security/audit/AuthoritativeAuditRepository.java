@@ -125,7 +125,31 @@ public class AuthoritativeAuditRepository {
         }
     }
 
+    private static final String SQL_PROBE_CHAIN_HEAD = """
+            SELECT 1
+              FROM opendolphin.audit_chain_head
+             WHERE singleton_key = ?
+            """;
+
+    /**
+     * Availability probe without row locks. The previous FOR UPDATE probe ran on the caller's JTA-enlisted
+     * connection, kept the chain head locked until the business transaction ended, and deadlocked the
+     * REQUIRES_NEW audit append (e.g. prescription save hung 60s then 500).
+     */
     public boolean isWritePathAvailable() {
+        try (Connection connection = requireDataSource().getConnection();
+             PreparedStatement statement = connection.prepareStatement(SQL_PROBE_CHAIN_HEAD)) {
+            statement.setShort(1, CHAIN_HEAD_KEY);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next();
+            }
+        } catch (SQLException | RuntimeException ex) {
+            return false;
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private boolean isWritePathAvailableWithLock() {
         try (Connection connection = requireDataSource().getConnection()) {
             boolean manageLocalTransaction = connection.getAutoCommit();
             if (manageLocalTransaction) {

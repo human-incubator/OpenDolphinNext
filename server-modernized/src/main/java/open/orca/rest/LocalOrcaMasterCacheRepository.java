@@ -536,10 +536,13 @@ public class LocalOrcaMasterCacheRepository {
                     + "FROM opendolphin.local_orca_master_entry WHERE master_type = :masterType AND read_only = TRUE "
                     + "AND (name " + operator + " :keyword OR kana " + operator + " :keyword) "
                     + "AND (valid_to IS NULL OR valid_to = '' OR valid_to = '00000000' OR valid_to >= :referenceDate) "
-                    + "ORDER BY name LIMIT 20";
+                    + (partial ? "ORDER BY CASE WHEN name LIKE :prefix OR kana LIKE :prefix THEN 0 ELSE 1 END, length(name), name LIMIT 50" : "ORDER BY name LIMIT 20");
             Query query = entityManager().createNativeQuery(sql);
             query.setParameter("masterType", masterType);
-            query.setParameter("keyword", partial ? keyword + "%" : keyword);
+            query.setParameter("keyword", partial ? "%" + keyword + "%" : keyword);
+            if (partial) {
+                query.setParameter("prefix", keyword + "%");
+            }
             query.setParameter("referenceDate", normalizeEffective(referenceDate));
             @SuppressWarnings("unchecked")
             List<Object[]> rows = query.getResultList();
